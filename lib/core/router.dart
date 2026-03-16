@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../screens/home/home_screen.dart';
 import '../screens/splash_screen.dart';
 import '../screens/auth/login_screen.dart';
 import '../screens/auth/register_screen.dart';
@@ -39,8 +40,10 @@ GoRouter buildRouter() {
       if (!isLoggedIn && !isAuthPage) {
         return '/login';
       }
+      // Redirect bare root to home
+      if (location == '/') return '/home';
       if (isLoggedIn && isAuthPage) {
-        return '/explore';
+        return '/home';
       }
       return null;
     },
@@ -122,8 +125,18 @@ GoRouter buildRouter() {
           return MainShell(navigationShell: navigationShell);
         },
         branches: [
+          // 0 - Home
           StatefulShellBranch(
             navigatorKey: _shellNavigatorKey,
+            routes: [
+              GoRoute(
+                path: '/home',
+                builder: (context, state) => const HomeScreen(),
+              ),
+            ],
+          ),
+          // 1 - Explore
+          StatefulShellBranch(
             routes: [
               GoRoute(
                 path: '/explore',
@@ -131,6 +144,7 @@ GoRouter buildRouter() {
               ),
             ],
           ),
+          // 2 - Designers
           StatefulShellBranch(
             routes: [
               GoRoute(
@@ -139,6 +153,7 @@ GoRouter buildRouter() {
               ),
             ],
           ),
+          // 3 - Messages
           StatefulShellBranch(
             routes: [
               GoRoute(
@@ -147,6 +162,7 @@ GoRouter buildRouter() {
               ),
             ],
           ),
+          // 4 - Profile
           StatefulShellBranch(
             routes: [
               GoRoute(
