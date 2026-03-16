@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -14,28 +15,20 @@ import '../../widgets/smart_image.dart';
 class _Category {
   final String id;
   final String label;
-  final IconData icon;
-  final Color color;
-  final Color textColor;
+  final String imageUrl;
 
-  const _Category({
-    required this.id,
-    required this.label,
-    required this.icon,
-    required this.color,
-    required this.textColor,
-  });
+  const _Category({required this.id, required this.label, required this.imageUrl});
 }
 
 const _categories = [
-  _Category(id: 'salon', label: 'Salon', icon: Icons.weekend_outlined, color: Color(0xFFEFF6FF), textColor: Color(0xFF1D4ED8)),
-  _Category(id: 'mutfak', label: 'Mutfak', icon: Icons.kitchen_outlined, color: Color(0xFFFFF7ED), textColor: Color(0xFFC2410C)),
-  _Category(id: 'banyo', label: 'Banyo', icon: Icons.bathtub_outlined, color: Color(0xFFF0FDF4), textColor: Color(0xFF15803D)),
-  _Category(id: 'yatak-odasi', label: 'Yatak', icon: Icons.king_bed_outlined, color: Color(0xFFFDF4FF), textColor: Color(0xFF7E22CE)),
-  _Category(id: 'cocuk', label: 'Çocuk', icon: Icons.child_care_outlined, color: Color(0xFFFFF1F2), textColor: Color(0xFFBE123C)),
-  _Category(id: 'ev-ofisi', label: 'Ofis', icon: Icons.computer_outlined, color: Color(0xFFF0F9FF), textColor: Color(0xFF0369A1)),
-  _Category(id: 'balkon', label: 'Balkon', icon: Icons.deck_outlined, color: Color(0xFFF7FEE7), textColor: Color(0xFF4D7C0F)),
-  _Category(id: 'antre', label: 'Antre', icon: Icons.door_front_door_outlined, color: Color(0xFFFFFBEB), textColor: Color(0xFFB45309)),
+  _Category(id: 'salon', label: 'Salon', imageUrl: 'https://images.unsplash.com/photo-1502005229762-cf1b2da7c5d6?auto=format&fit=crop&w=400&q=80'),
+  _Category(id: 'mutfak', label: 'Mutfak', imageUrl: 'https://images.unsplash.com/photo-1556912167-f556f1f39faa?auto=format&fit=crop&w=400&q=80'),
+  _Category(id: 'banyo', label: 'Banyo', imageUrl: 'https://images.unsplash.com/photo-1552321554-5fefe8c9ef14?auto=format&fit=crop&w=400&q=80'),
+  _Category(id: 'yatak-odasi', label: 'Yatak', imageUrl: 'https://images.unsplash.com/photo-1540518614846-7eded433c457?auto=format&fit=crop&w=400&q=80'),
+  _Category(id: 'ev-ofisi', label: 'Ofis', imageUrl: 'https://images.unsplash.com/photo-1524758631624-e2822e304c36?auto=format&fit=crop&w=400&q=80'),
+  _Category(id: 'balkon', label: 'Balkon', imageUrl: 'https://images.unsplash.com/photo-1505692952047-1a78307da8f2?auto=format&fit=crop&w=400&q=80'),
+  _Category(id: 'antre', label: 'Antre', imageUrl: 'https://images.unsplash.com/photo-1520607162513-77705c0f0d4a?auto=format&fit=crop&w=400&q=80'),
+  _Category(id: 'cocuk', label: 'Çocuk', imageUrl: 'https://images.unsplash.com/photo-1566140967404-b8b3932483f5?auto=format&fit=crop&w=400&q=80'),
 ];
 
 class _Service {
@@ -207,34 +200,42 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: 12),
         SizedBox(
-          height: 96,
+          height: 108,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
             itemCount: _categories.length,
             itemBuilder: (context, i) {
               final cat = _categories[i];
               return GestureDetector(
-                onTap: () => context.push('/explore?category=${cat.id}'),
+                onTap: () => context.go('/explore'),
                 child: SizedBox(
-                  width: 76,
+                  width: 80,
                   child: Column(
                     children: [
                       Container(
-                        width: 60,
-                        height: 60,
+                        width: 80,
+                        height: 80,
                         decoration: BoxDecoration(
-                          color: cat.color,
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: cat.textColor.withValues(alpha: 0.15)),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: AppColors.border),
                         ),
-                        child: Icon(cat.icon, color: cat.textColor, size: 28),
+                        clipBehavior: Clip.hardEdge,
+                        child: CachedNetworkImage(
+                          imageUrl: cat.imageUrl,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => Container(color: AppColors.border),
+                          errorWidget: (_, __, ___) => Container(
+                            color: AppColors.border,
+                            child: const Icon(Icons.image_outlined, color: AppColors.textSecondary),
+                          ),
+                        ),
                       ),
                       const SizedBox(height: 6),
                       Text(
                         cat.label,
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
                         textAlign: TextAlign.center,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
