@@ -6,7 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 const _gistUrl =
     'https://gist.githubusercontent.com/Evlumba/476b663eb77f8c7ad9178357827f4beb/raw/fe3ae7c5a91bff85cec8acb97a84beb2b1a27f26/gistfile1.txt';
 
-const _currentVersion = '1.0.0';
+const _currentVersion = '1.0.1';
 
 /// Compares two semantic version strings. Returns negative if a < b, 0 if equal, positive if a > b.
 int _compareVersions(String a, String b) {
