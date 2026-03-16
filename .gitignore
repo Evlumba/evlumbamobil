@@ -46,3 +46,5 @@ app.*.map.json
 
 # Environment variables - never commit real credentials
 .env
+evlumba-release.jks
+android/key.properties
