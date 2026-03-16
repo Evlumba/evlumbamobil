@@ -1,10 +1,9 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/theme.dart';
 import '../models/designer_project.dart';
-import 'shimmer_card.dart';
+import 'smart_image.dart';
 
 class ProjectCard extends StatelessWidget {
   final DesignerProject project;
@@ -31,19 +30,10 @@ class ProjectCard extends StatelessWidget {
             // Cover image
             Expanded(
               child: coverUrl.isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: coverUrl,
+                  ? SmartImage(
+                      url: coverUrl,
                       fit: BoxFit.cover,
                       width: double.infinity,
-                      placeholder: (context, url) =>
-                          const ShimmerCard(borderRadius: 0),
-                      errorWidget: (context, url, error) => Container(
-                        color: AppColors.border,
-                        child: const Icon(
-                          Icons.image_not_supported_outlined,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
                     )
                   : Container(
                       color: AppColors.border,

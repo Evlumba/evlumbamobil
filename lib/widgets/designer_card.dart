@@ -1,9 +1,9 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/theme.dart';
 import '../models/profile.dart';
+import 'smart_image.dart';
 import 'star_rating.dart';
 
 class DesignerCard extends StatelessWidget {
@@ -42,15 +42,11 @@ class DesignerCard extends StatelessWidget {
           children: [
             // Cover
             if (coverUrl != null && coverUrl.isNotEmpty)
-              CachedNetworkImage(
-                imageUrl: coverUrl,
+              SmartImage(
+                url: coverUrl,
                 height: 120,
                 width: double.infinity,
                 fit: BoxFit.cover,
-                errorWidget: (_, __, ___) => Container(
-                  height: 120,
-                  color: AppColors.border,
-                ),
               )
             else
               Container(
@@ -74,13 +70,9 @@ class DesignerCard extends StatelessWidget {
                     ),
                     clipBehavior: Clip.hardEdge,
                     child: avatarUrl != null && avatarUrl.isNotEmpty
-                        ? CachedNetworkImage(
-                            imageUrl: avatarUrl,
+                        ? SmartImage(
+                            url: avatarUrl,
                             fit: BoxFit.cover,
-                            errorWidget: (_, __, ___) => const Icon(
-                              Icons.person,
-                              color: AppColors.textSecondary,
-                            ),
                           )
                         : const Icon(
                             Icons.person,

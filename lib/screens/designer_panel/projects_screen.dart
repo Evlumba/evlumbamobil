@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import '../../widgets/smart_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -243,12 +243,12 @@ class _ProjectListItem extends StatelessWidget {
       child: Column(
         children: [
           if (coverUrl.isNotEmpty)
-            CachedNetworkImage(
-              imageUrl: coverUrl,
+            SmartImage(
+              url: coverUrl,
               height: 140,
               width: double.infinity,
               fit: BoxFit.cover,
-              errorWidget: (_, __, ___) => Container(
+              errorWidget: Container(
                 height: 140,
                 color: AppColors.border,
                 child: const Icon(

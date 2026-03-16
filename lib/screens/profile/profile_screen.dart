@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import '../../widgets/smart_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -131,11 +131,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       clipBehavior: Clip.hardEdge,
                       child: profile?.avatarUrl != null &&
                               profile!.avatarUrl!.isNotEmpty
-                          ? CachedNetworkImage(
-                              imageUrl: profile.avatarUrl!,
+                          ? SmartImage(
+                              url: profile.avatarUrl,
                               fit: BoxFit.cover,
-                              errorWidget: (_, __, ___) =>
-                                  _AvatarFallback(name: profile.displayName),
                             )
                           : _AvatarFallback(
                               name: profile?.displayName ?? email.substring(0, 1),

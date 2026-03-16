@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import '../../widgets/smart_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -131,12 +131,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                           onPageChanged: (i) =>
                               setState(() => _currentImageIndex = i),
                           itemBuilder: (context, index) {
-                            return CachedNetworkImage(
-                              imageUrl: allImages[index],
+                            return SmartImage(
+                              url: allImages[index],
                               fit: BoxFit.cover,
-                              errorWidget: (_, __, ___) => Container(
-                                color: AppColors.border,
-                              ),
                             );
                           },
                         ),
@@ -359,20 +356,11 @@ class _ShopLinkCard extends StatelessWidget {
           children: [
             if (link.productImageUrl != null &&
                 (link.productImageUrl as String).isNotEmpty)
-              CachedNetworkImage(
-                imageUrl: link.productImageUrl as String,
+              SmartImage(
+                url: link.productImageUrl,
                 width: 56,
                 height: 56,
                 fit: BoxFit.cover,
-                errorWidget: (_, __, ___) => Container(
-                  width: 56,
-                  height: 56,
-                  color: AppColors.border,
-                  child: const Icon(
-                    Icons.shopping_bag_outlined,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
               )
             else
               Container(

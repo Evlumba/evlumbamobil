@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import '../../widgets/smart_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -232,12 +232,9 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
                       clipBehavior: Clip.hardEdge,
                       child: conv.otherPartyAvatarUrl != null &&
                               conv.otherPartyAvatarUrl!.isNotEmpty
-                          ? CachedNetworkImage(
-                              imageUrl: conv.otherPartyAvatarUrl!,
+                          ? SmartImage(
+                              url: conv.otherPartyAvatarUrl,
                               fit: BoxFit.cover,
-                              errorWidget: (_, __, ___) => _AvatarPlaceholder(
-                                name: conv.otherPartyName ?? 'K',
-                              ),
                             )
                           : _AvatarPlaceholder(
                               name: conv.otherPartyName ?? 'K',

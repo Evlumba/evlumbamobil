@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import '../../widgets/smart_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -112,8 +112,8 @@ class _PanelScreenState extends State<PanelScreen> {
                             clipBehavior: Clip.hardEdge,
                             child: _profile?.avatarUrl != null &&
                                     _profile!.avatarUrl!.isNotEmpty
-                                ? CachedNetworkImage(
-                                    imageUrl: _profile!.avatarUrl!,
+                                ? SmartImage(
+                                    url: _profile!.avatarUrl,
                                     fit: BoxFit.cover,
                                   )
                                 : Container(

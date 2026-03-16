@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import '../../widgets/smart_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -249,16 +249,8 @@ class _DesignerProfileScreenState extends State<DesignerProfileScreen>
             flexibleSpace: FlexibleSpaceBar(
               background: profile.coverPhotoUrl != null &&
                       profile.coverPhotoUrl!.isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: profile.coverPhotoUrl!,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => Container(
-                        color: AppColors.primary.withOpacity(0.15),
-                      ),
-                    )
-                  : Container(
-                      color: AppColors.primary.withOpacity(0.15),
-                    ),
+                  ? SmartImage(url: profile.coverPhotoUrl, fit: BoxFit.cover)
+                  : Container(color: AppColors.primary.withOpacity(0.15)),
             ),
           ),
           SliverToBoxAdapter(
@@ -397,17 +389,7 @@ class _ProfileHeader extends StatelessWidget {
                 ),
                 clipBehavior: Clip.hardEdge,
                 child: profile.avatarUrl != null && profile.avatarUrl!.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: profile.avatarUrl!,
-                        fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => Container(
-                          color: AppColors.border,
-                          child: const Icon(
-                            Icons.person,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      )
+                    ? SmartImage(url: profile.avatarUrl, fit: BoxFit.cover)
                     : Container(
                         color: AppColors.primary.withOpacity(0.1),
                         child: const Icon(
