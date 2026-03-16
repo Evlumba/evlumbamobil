@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/theme.dart';
+import '../services/version_check_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -20,6 +21,9 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _navigate() async {
     await Future<void>.delayed(const Duration(milliseconds: 800));
+    if (!mounted) return;
+
+    await checkForUpdate(context);
     if (!mounted) return;
 
     final session = Supabase.instance.client.auth.currentSession;

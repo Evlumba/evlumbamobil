@@ -1,4 +1,4 @@
-package com.evlumba.evlumba_mobile
+package com.evlumba.app
 
 import io.flutter.embedding.android.FlutterActivity
 
