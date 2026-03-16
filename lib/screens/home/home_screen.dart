@@ -22,7 +22,7 @@ class _Category {
 
 const _categories = [
   _Category(id: 'salon', label: 'Salon', imageUrl: 'https://images.unsplash.com/photo-1502005229762-cf1b2da7c5d6?auto=format&fit=crop&w=400&q=80'),
-  _Category(id: 'mutfak', label: 'Mutfak', imageUrl: 'https://images.unsplash.com/photo-1556912167-f556f1f39faa?auto=format&fit=crop&w=400&q=80'),
+  _Category(id: 'mutfak', label: 'Mutfak', imageUrl: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=400&q=80'),
   _Category(id: 'banyo', label: 'Banyo', imageUrl: 'https://images.unsplash.com/photo-1552321554-5fefe8c9ef14?auto=format&fit=crop&w=400&q=80'),
   _Category(id: 'yatak-odasi', label: 'Yatak', imageUrl: 'https://images.unsplash.com/photo-1540518614846-7eded433c457?auto=format&fit=crop&w=400&q=80'),
   _Category(id: 'ev-ofisi', label: 'Ofis', imageUrl: 'https://images.unsplash.com/photo-1524758631624-e2822e304c36?auto=format&fit=crop&w=400&q=80'),
