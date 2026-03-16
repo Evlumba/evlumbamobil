@@ -177,6 +177,20 @@ class _HomeScreenState extends State<HomeScreen> {
             'Evlumba',
             style: TextStyle(color: AppColors.textPrimary, fontSize: 20, fontWeight: FontWeight.w800),
           ),
+          const Spacer(),
+          GestureDetector(
+            onTap: () => context.go('/profile'),
+            child: Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.border, width: 1.5),
+                color: AppColors.background,
+              ),
+              child: const Icon(Icons.person_outline_rounded, size: 20, color: AppColors.textSecondary),
+            ),
+          ),
         ],
       ),
       flexibleSpace: FlexibleSpaceBar(
