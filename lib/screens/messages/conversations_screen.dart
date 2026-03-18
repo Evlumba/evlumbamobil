@@ -1,4 +1,3 @@
-import '../../widgets/smart_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -6,6 +5,7 @@ import '../../core/supabase_client.dart';
 import '../../core/theme.dart';
 import '../../models/conversation.dart';
 import '../../widgets/shimmer_card.dart';
+import '../../widgets/smart_image.dart';
 
 class ConversationsScreen extends StatefulWidget {
   const ConversationsScreen({super.key});
@@ -16,13 +16,35 @@ class ConversationsScreen extends StatefulWidget {
 
 class _ConversationsScreenState extends State<ConversationsScreen> {
   List<Conversation> _conversations = [];
+  List<Conversation> _filtered = [];
   bool _loading = true;
   String? _error;
+  final _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _fetchConversations();
+    _searchController.addListener(_onSearch);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearch() {
+    final q = _searchController.text.toLowerCase();
+    setState(() {
+      _filtered = q.isEmpty
+          ? _conversations
+          : _conversations
+              .where((c) =>
+                  (c.otherPartyName ?? '').toLowerCase().contains(q) ||
+                  (c.lastMessage ?? '').toLowerCase().contains(q))
+              .toList();
+    });
   }
 
   Future<void> _fetchConversations() async {
@@ -31,14 +53,9 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
       if (mounted) context.go('/login');
       return;
     }
-
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    setState(() { _loading = true; _error = null; });
 
     try {
-      // Get conversations where user is homeowner or designer
       final homeownerConvs = await supabase
           .from('conversations')
           .select('id, homeowner_id, designer_id, created_at')
@@ -60,29 +77,28 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
           .map((e) => Conversation.fromJson(e as Map<String, dynamic>))
           .toList();
 
-      // Fetch other party info for each conversation
       final enrichedConvs = await Future.wait(
         conversations.map((conv) async {
           final otherPartyId = conv.homeownerId == currentUser.id
               ? conv.designerId
               : conv.homeownerId;
-
           try {
             final profileData = await supabase
                 .from('profiles')
-                .select('id, full_name, avatar_url')
+                .select('id, full_name, avatar_url, specialty')
                 .eq('id', otherPartyId)
                 .maybeSingle();
 
             String? name;
             String? avatarUrl;
+            String? specialty;
             if (profileData != null) {
               final p = profileData as Map<String, dynamic>;
               name = (p['full_name'] as String?)?.split(' ').first ?? 'Kullanıcı';
               avatarUrl = p['avatar_url'] as String?;
+              specialty = p['specialty'] as String?;
             }
 
-            // Fetch last message
             final lastMsgData = await supabase
                 .from('messages')
                 .select('body, created_at')
@@ -100,7 +116,6 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
                   : null;
             }
 
-            // Count unread messages
             final unreadData = await supabase
                 .from('messages')
                 .select('id')
@@ -123,7 +138,6 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
         }),
       );
 
-      // Sort by last message time
       enrichedConvs.sort((a, b) {
         final aTime = a.lastMessageAt ?? a.createdAt;
         final bTime = b.lastMessageAt ?? b.createdAt;
@@ -132,6 +146,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
 
       setState(() {
         _conversations = enrichedConvs;
+        _filtered = enrichedConvs;
         _loading = false;
       });
     } catch (e) {
@@ -148,7 +163,9 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
     final diff = now.difference(time);
     if (diff.inMinutes < 1) return 'Az önce';
     if (diff.inHours < 1) return '${diff.inMinutes} dk';
-    if (diff.inDays < 1) return '${diff.inHours} sa';
+    if (diff.inDays < 1) {
+      return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+    }
     if (diff.inDays < 7) return '${diff.inDays} gün';
     return '${time.day}/${time.month}';
   }
@@ -157,173 +174,268 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(title: const Text('Mesajlar')),
-      body: _error != null
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(
-                    Icons.error_outline,
-                    color: AppColors.textSecondary,
-                    size: 48,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    _error!,
-                    style: const TextStyle(color: AppColors.textSecondary),
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: _fetchConversations,
-                    child: const Text('Tekrar Dene'),
-                  ),
-                ],
-              ),
-            )
-          : _loading
-          ? ListView.builder(
-              itemCount: 6,
-              itemBuilder: (_, __) => const ShimmerListItem(),
-            )
-          : _conversations.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(
-                    Icons.chat_bubble_outline,
-                    size: 64,
-                    color: AppColors.textSecondary,
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Henüz mesajınız yok.',
-                    style: TextStyle(color: AppColors.textSecondary),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Bir tasarımcıya mesaj göndererek başlayın.',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: AppColors.textSecondary,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            )
-          : RefreshIndicator(
-              onRefresh: _fetchConversations,
-              child: ListView.separated(
-                itemCount: _conversations.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemBuilder: (context, index) {
-                  final conv = _conversations[index];
-                  return ListTile(
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    leading: Container(
-                      width: 50,
-                      height: 50,
-                      decoration: const BoxDecoration(shape: BoxShape.circle),
-                      clipBehavior: Clip.hardEdge,
-                      child: conv.otherPartyAvatarUrl != null &&
-                              conv.otherPartyAvatarUrl!.isNotEmpty
-                          ? SmartImage(
-                              url: conv.otherPartyAvatarUrl,
-                              fit: BoxFit.cover,
-                            )
-                          : _AvatarPlaceholder(
-                              name: conv.otherPartyName ?? 'K',
-                            ),
-                    ),
-                    title: Text(
-                      conv.otherPartyName ?? 'Kullanıcı',
-                      style: TextStyle(
-                        fontWeight: conv.unreadCount > 0
-                            ? FontWeight.w700
-                            : FontWeight.w500,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    subtitle: Text(
-                      conv.lastMessage ?? 'Konuşma başladı',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: conv.unreadCount > 0
-                            ? AppColors.textPrimary
-                            : AppColors.textSecondary,
-                        fontWeight: conv.unreadCount > 0
-                            ? FontWeight.w500
-                            : FontWeight.w400,
-                      ),
-                    ),
-                    trailing: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          _formatTime(conv.lastMessageAt ?? conv.createdAt),
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: conv.unreadCount > 0
-                                ? AppColors.primary
-                                : AppColors.textSecondary,
-                          ),
-                        ),
-                        if (conv.unreadCount > 0) ...[
-                          const SizedBox(height: 4),
-                          Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: AppColors.primary,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Text(
-                              '${conv.unreadCount}',
-                              style: const TextStyle(
-                                fontSize: 10,
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                    onTap: () => context.push(
-                      '/chat/${conv.id}?name=${Uri.encodeComponent(conv.otherPartyName ?? 'Kullanıcı')}',
-                    ),
-                  );
-                },
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: AppColors.primary),
+          onPressed: () => context.go('/home'),
+        ),
+        title: const Text(
+          'Evlumba',
+          style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.primary, fontSize: 18),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.chat_bubble_outline, color: AppColors.primary),
+            onPressed: () {},
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: GestureDetector(
+              onTap: () => context.go('/profile'),
+              child: const CircleAvatar(
+                radius: 16,
+                backgroundColor: AppColors.border,
+                child: Icon(Icons.person, size: 18, color: AppColors.textSecondary),
               ),
             ),
+          ),
+        ],
+      ),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Title row
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+            child: Row(
+              children: [
+                const Text(
+                  'Mesajlar',
+                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(Icons.chat_bubble_outline, color: Colors.white, size: 15),
+                      SizedBox(width: 6),
+                      Text('Yeni Mesaj', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Search bar
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: TextField(
+                controller: _searchController,
+                decoration: const InputDecoration(
+                  hintText: 'Mesaj veya kişi ara...',
+                  hintStyle: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                  prefixIcon: Icon(Icons.search, color: AppColors.textSecondary, size: 20),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // List
+          Expanded(
+            child: _error != null
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.error_outline, color: AppColors.textSecondary, size: 48),
+                        const SizedBox(height: 16),
+                        Text(_error!, style: const TextStyle(color: AppColors.textSecondary)),
+                        const SizedBox(height: 16),
+                        ElevatedButton(onPressed: _fetchConversations, child: const Text('Tekrar Dene')),
+                      ],
+                    ),
+                  )
+                : _loading
+                    ? ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: 5,
+                        itemBuilder: (_, __) => const Padding(
+                          padding: EdgeInsets.only(bottom: 10),
+                          child: ShimmerListItem(),
+                        ),
+                      )
+                    : _filtered.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: const [
+                                Icon(Icons.chat_bubble_outline, size: 64, color: AppColors.textSecondary),
+                                SizedBox(height: 16),
+                                Text('Henüz mesajınız yok.', style: TextStyle(color: AppColors.textSecondary)),
+                                SizedBox(height: 8),
+                                Text(
+                                  'Bir tasarımcıya mesaj göndererek başlayın.',
+                                  style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          )
+                        : RefreshIndicator(
+                            onRefresh: _fetchConversations,
+                            child: ListView.builder(
+                              padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                              itemCount: _filtered.length,
+                              itemBuilder: (context, index) {
+                                final conv = _filtered[index];
+                                return _ConversationCard(
+                                  conv: conv,
+                                  timeLabel: _formatTime(conv.lastMessageAt ?? conv.createdAt),
+                                  onTap: () => context.push(
+                                    '/chat/${conv.id}'
+                                    '?name=${Uri.encodeComponent(conv.otherPartyName ?? 'Kullanıcı')}'
+                                    '&avatar=${Uri.encodeComponent(conv.otherPartyAvatarUrl ?? '')}'
+                                    '&userId=${Uri.encodeComponent(conv.designerId)}',
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+          ),
+        ],
+      ),
     );
   }
 }
 
-class _AvatarPlaceholder extends StatelessWidget {
-  final String name;
+class _ConversationCard extends StatelessWidget {
+  final Conversation conv;
+  final String timeLabel;
+  final VoidCallback onTap;
 
-  const _AvatarPlaceholder({required this.name});
+  const _ConversationCard({required this.conv, required this.timeLabel, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: AppColors.primary.withOpacity(0.1),
-      child: Center(
-        child: Text(
-          name.substring(0, 1).toUpperCase(),
-          style: const TextStyle(
-            fontWeight: FontWeight.w700,
-            color: AppColors.primary,
-            fontSize: 18,
+    final hasUnread = conv.unreadCount > 0;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: hasUnread ? AppColors.primary.withOpacity(0.04) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: hasUnread ? AppColors.primary.withOpacity(0.15) : AppColors.border,
           ),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2)),
+          ],
+        ),
+        child: Row(
+          children: [
+            // Avatar
+            Container(
+              width: 52,
+              height: 52,
+              decoration: const BoxDecoration(shape: BoxShape.circle),
+              clipBehavior: Clip.hardEdge,
+              child: conv.otherPartyAvatarUrl != null && conv.otherPartyAvatarUrl!.isNotEmpty
+                  ? SmartImage(url: conv.otherPartyAvatarUrl, fit: BoxFit.cover)
+                  : Container(
+                      color: AppColors.primary.withOpacity(0.1),
+                      child: Center(
+                        child: Text(
+                          (conv.otherPartyName ?? 'K').substring(0, 1).toUpperCase(),
+                          style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.primary, fontSize: 18),
+                        ),
+                      ),
+                    ),
+            ),
+            const SizedBox(width: 12),
+
+            // Content
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          conv.otherPartyName ?? 'Kullanıcı',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: hasUnread ? FontWeight.w700 : FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Text(
+                        timeLabel,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: hasUnread ? AppColors.primary : AppColors.textSecondary,
+                          fontWeight: hasUnread ? FontWeight.w600 : FontWeight.w400,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          conv.lastMessage ?? 'Konuşma başladı',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: hasUnread ? AppColors.textPrimary : AppColors.textSecondary,
+                            fontWeight: hasUnread ? FontWeight.w500 : FontWeight.w400,
+                            height: 1.3,
+                          ),
+                        ),
+                      ),
+                      if (hasUnread) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.all(5),
+                          decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+                          child: Text(
+                            '${conv.unreadCount}',
+                            style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

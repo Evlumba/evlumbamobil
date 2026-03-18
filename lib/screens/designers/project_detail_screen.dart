@@ -20,6 +20,7 @@ class ProjectDetailScreen extends StatefulWidget {
 class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   DesignerProject? _project;
   Profile? _designer;
+  Profile? _currentUserProfile;
   bool _loading = true;
   String? _error;
   int _currentImageIndex = 0;
@@ -32,6 +33,20 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   void initState() {
     super.initState();
     _fetchProject();
+    _fetchCurrentUser();
+  }
+
+  Future<void> _fetchCurrentUser() async {
+    final uid = supabase.auth.currentUser?.id;
+    if (uid == null) return;
+    try {
+      final data = await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url')
+          .eq('id', uid)
+          .single();
+      if (mounted) setState(() => _currentUserProfile = Profile.fromJson(data as Map<String, dynamic>));
+    } catch (_) {}
   }
 
   @override
@@ -113,34 +128,40 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   }
 
   AppBar _buildAppBar() {
+    final avatarUrl = _currentUserProfile?.avatarUrl;
     return AppBar(
       backgroundColor: Colors.white,
       elevation: 0,
       leading: IconButton(
-        icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+        icon: const Icon(Icons.arrow_back, color: AppColors.primary),
         onPressed: () => context.pop(),
       ),
       title: const Text(
         'Evlumba',
         style: TextStyle(
           fontWeight: FontWeight.w800,
-          color: AppColors.textPrimary,
+          color: AppColors.primary,
           fontSize: 18,
         ),
       ),
       actions: [
         IconButton(
-          icon: const Icon(Icons.chat_bubble_outline, color: AppColors.textPrimary),
+          icon: const Icon(Icons.chat_bubble_outline, color: AppColors.primary),
           onPressed: () => context.push('/messages'),
         ),
         Padding(
           padding: const EdgeInsets.only(right: 12),
           child: GestureDetector(
             onTap: () => context.push('/profile'),
-            child: const CircleAvatar(
+            child: CircleAvatar(
               radius: 16,
               backgroundColor: AppColors.border,
-              child: Icon(Icons.person, size: 18, color: AppColors.textSecondary),
+              backgroundImage: avatarUrl != null && avatarUrl.isNotEmpty && !avatarUrl.startsWith('data:')
+                  ? NetworkImage(avatarUrl)
+                  : null,
+              child: avatarUrl == null || avatarUrl.isEmpty
+                  ? const Icon(Icons.person, size: 18, color: AppColors.textSecondary)
+                  : null,
             ),
           ),
         ),
@@ -752,7 +773,7 @@ class _DesignerMiniCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(16),
@@ -765,60 +786,69 @@ class _DesignerMiniCard extends StatelessWidget {
             ),
           ],
         ),
-        child: Row(
+        child: Stack(
           children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: AppColors.border, width: 2),
-              ),
-              clipBehavior: Clip.hardEdge,
-              child: designer.avatarUrl != null && designer.avatarUrl!.isNotEmpty
-                  ? SmartImage(url: designer.avatarUrl, fit: BoxFit.cover)
-                  : Container(
-                      color: AppColors.primary.withOpacity(0.1),
-                      child: const Icon(
-                        Icons.person,
-                        color: AppColors.primary,
-                        size: 28,
-                      ),
-                    ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    designer.displayName,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+            Row(
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.border, width: 2),
                   ),
-                  if (designer.specialty != null || designer.city != null) ...[
-                    const SizedBox(height: 3),
-                    Text(
-                      [designer.specialty, designer.city]
-                          .where((s) => s != null && s.isNotEmpty)
-                          .join(' · '),
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
+                  clipBehavior: Clip.hardEdge,
+                  child: designer.avatarUrl != null && designer.avatarUrl!.isNotEmpty
+                      ? SmartImage(url: designer.avatarUrl, fit: BoxFit.cover)
+                      : Container(
+                          color: AppColors.primary.withOpacity(0.1),
+                          child: const Icon(Icons.person, color: AppColors.primary, size: 28),
+                        ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        designer.displayName,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ],
-              ),
+                      if (designer.specialty != null && designer.specialty!.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          designer.specialty!,
+                          style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                      if (designer.city != null && designer.city!.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          designer.city!,
+                          style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
             ),
-            const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+            // Sparkle icon top-right
+            Positioned(
+              top: 0,
+              right: 0,
+              child: Icon(Icons.auto_awesome, size: 16, color: AppColors.primary.withOpacity(0.7)),
+            ),
           ],
         ),
       ),

@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/supabase_client.dart';
@@ -47,39 +49,43 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
 
     try {
-      final response = await supabase.auth.signUp(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
-        data: {
-          'full_name': _nameController.text.trim().isEmpty
-              ? 'Yeni Kullanıcı'
-              : _nameController.text.trim(),
-        },
-      );
+      final email = _emailController.text.trim();
+      final password = _passwordController.text.trim();
+      final name = _nameController.text.trim().isEmpty
+          ? 'Yeni Kullanıcı'
+          : _nameController.text.trim();
 
-      final user = response.user;
-      if (user == null) {
+      // Kayıt isteğini web API üzerinden yap (admin API — rate limit yok)
+      final client = http.Client();
+      http.Response res;
+      try {
+        res = await client.post(
+          Uri.parse('https://www.evlumba.com/api/auth/register'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'name': name, 'email': email, 'password': password, 'role': _role}),
+        ).timeout(const Duration(seconds: 15));
+      } finally {
+        client.close();
+      }
+
+      debugPrint('Register response ${res.statusCode}: ${res.body.substring(0, res.body.length.clamp(0, 300))}');
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+
+      if (res.statusCode != 200 || body['ok'] != true) {
         setState(() {
-          _errorMessage = 'Kayıt tamamlanamadı. Lütfen tekrar dene.';
+          _errorMessage = body['error'] as String? ?? 'Kayıt başarısız.';
         });
         return;
       }
 
-      // Upsert profile with role
-      await supabase.from('profiles').upsert({
-        'id': user.id,
-        'full_name': _nameController.text.trim().isEmpty
-            ? 'Yeni Kullanıcı'
-            : _nameController.text.trim(),
-        'role': _role,
-        'contact_email': _emailController.text.trim(),
-      });
+      // Kullanıcı oluşturuldu, şimdi giriş yap
+      await supabase.auth.signInWithPassword(email: email, password: password);
 
       if (mounted) {
         if (_role == 'designer') {
           context.go('/panel');
         } else {
-          context.go('/explore');
+          context.go('/home');
         }
       }
     } on AuthException catch (e) {
@@ -88,7 +94,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       });
     } catch (e) {
       setState(() {
-        _errorMessage = 'Beklenmeyen bir hata oluştu.';
+        _errorMessage = e.toString();
       });
     } finally {
       if (mounted) {
@@ -244,7 +250,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       controller: _nameController,
                       textInputAction: TextInputAction.next,
                       decoration: const InputDecoration(
-                        labelText: 'Ad Soyad (opsiyonel)',
+                        labelText: 'Ad Soyad',
                         prefixIcon: Icon(Icons.person_outlined),
                       ),
                     ),

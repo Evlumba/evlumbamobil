@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/supabase_client.dart';
 import '../../core/theme.dart';
@@ -8,56 +9,84 @@ import '../../models/designer_project.dart';
 import '../../models/profile.dart';
 import '../../widgets/smart_image.dart';
 
-// ────────────────────────────────────────────────────────────────
-// Data
-// ────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Inline preview models (home screen only)
+// ─────────────────────────────────────────────────────────────────────────────
 
-class _Category {
-  final String id;
-  final String label;
-  final String imageUrl;
+class _ListingPreview {
+  final String id, title, city;
+  final bool isUrgent;
+  final int? budgetMin, budgetMax;
+  final List<String> neededProfessions;
 
-  const _Category({required this.id, required this.label, required this.imageUrl});
-}
-
-const _categories = [
-  _Category(id: 'salon', label: 'Salon', imageUrl: 'https://images.unsplash.com/photo-1502005229762-cf1b2da7c5d6?auto=format&fit=crop&w=400&q=80'),
-  _Category(id: 'mutfak', label: 'Mutfak', imageUrl: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=400&q=80'),
-  _Category(id: 'banyo', label: 'Banyo', imageUrl: 'https://images.unsplash.com/photo-1552321554-5fefe8c9ef14?auto=format&fit=crop&w=400&q=80'),
-  _Category(id: 'yatak-odasi', label: 'Yatak', imageUrl: 'https://images.unsplash.com/photo-1540518614846-7eded433c457?auto=format&fit=crop&w=400&q=80'),
-  _Category(id: 'ev-ofisi', label: 'Ofis', imageUrl: 'https://images.unsplash.com/photo-1524758631624-e2822e304c36?auto=format&fit=crop&w=400&q=80'),
-  _Category(id: 'balkon', label: 'Balkon', imageUrl: 'https://images.unsplash.com/photo-1505692952047-1a78307da8f2?auto=format&fit=crop&w=400&q=80'),
-  _Category(id: 'antre', label: 'Antre', imageUrl: 'https://images.unsplash.com/photo-1520607162513-77705c0f0d4a?auto=format&fit=crop&w=400&q=80'),
-  _Category(id: 'cocuk', label: 'Çocuk', imageUrl: 'https://images.unsplash.com/photo-1566140967404-b8b3932483f5?auto=format&fit=crop&w=400&q=80'),
-];
-
-class _Service {
-  final String label;
-  final IconData icon;
-  final Color color;
-  final Color iconBg;
-  final String route;
-
-  const _Service({
-    required this.label,
-    required this.icon,
-    required this.color,
-    required this.iconBg,
-    required this.route,
+  const _ListingPreview({
+    required this.id,
+    required this.title,
+    required this.city,
+    this.isUrgent = false,
+    this.budgetMin,
+    this.budgetMax,
+    this.neededProfessions = const [],
   });
+
+  factory _ListingPreview.fromJson(Map<String, dynamic> j) {
+    final profs = (j['needed_professions'] as List<dynamic>?)?.cast<String>() ?? [];
+    return _ListingPreview(
+      id: j['id'] as String,
+      title: (j['title'] as String?) ?? '',
+      city: (j['city'] as String?) ?? '',
+      isUrgent: (j['is_urgent'] as bool?) ?? false,
+      budgetMin: (j['budget_min'] as num?)?.toInt(),
+      budgetMax: (j['budget_max'] as num?)?.toInt(),
+      neededProfessions: profs,
+    );
+  }
 }
 
-const _services = [
-  _Service(label: 'Forum', icon: Icons.forum_outlined, color: Color(0xFF0284C7), iconBg: Color(0xFFE0F2FE), route: '/forum'),
-  _Service(label: 'Blog', icon: Icons.article_outlined, color: Color(0xFF7C3AED), iconBg: Color(0xFFEDE9FE), route: '/blog'),
-  _Service(label: 'AI Tasarla', icon: Icons.auto_awesome_outlined, color: Color(0xFFDB2777), iconBg: Color(0xFFFCE7F3), route: '/ai-design'),
-  _Service(label: 'Keşfet\nOyunu', icon: Icons.casino_outlined, color: Color(0xFF059669), iconBg: Color(0xFFD1FAE5), route: '/game'),
-  _Service(label: 'İlanlar', icon: Icons.work_outline, color: Color(0xFFD97706), iconBg: Color(0xFFFEF3C7), route: '/ilanlar'),
-];
+class _BlogPreview {
+  final String id, slug, title;
+  final String? excerpt, coverImageUrl, authorName, authorAvatarUrl;
 
-// ────────────────────────────────────────────────────────────────
+  const _BlogPreview({
+    required this.id,
+    required this.slug,
+    required this.title,
+    this.excerpt,
+    this.coverImageUrl,
+    this.authorName,
+    this.authorAvatarUrl,
+  });
+
+  factory _BlogPreview.fromJson(Map<String, dynamic> j) {
+    return _BlogPreview(
+      id: j['id'] as String,
+      slug: (j['slug'] as String?) ?? '',
+      title: (j['title'] as String?) ?? '',
+      excerpt: j['excerpt'] as String?,
+      coverImageUrl: j['cover_image_url'] as String?,
+    );
+  }
+}
+
+class _ForumPreview {
+  final String id, slug, title;
+  final String? starterBody;
+
+  const _ForumPreview({required this.id, required this.slug, required this.title, this.starterBody});
+
+  factory _ForumPreview.fromJson(Map<String, dynamic> j) {
+    return _ForumPreview(
+      id: j['id'] as String,
+      slug: (j['slug'] as String?) ?? '',
+      title: (j['title'] as String?) ?? '',
+      starterBody: j['starter_body'] as String?,
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Screen
-// ────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -67,19 +96,46 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  List<DesignerProject> _featuredProjects = [];
-  List<Profile> _featuredDesigners = [];
+  List<DesignerProject> _projects = [];
+  List<Profile> _designers = [];
+  List<_ListingPreview> _listings = [];
+  List<_BlogPreview> _blogs = [];
+  List<_ForumPreview> _forums = [];
+
   bool _loadingProjects = true;
   bool _loadingDesigners = true;
+  bool _loadingListings = true;
+  bool _loadingBlogs = true;
+  bool _loadingForums = true;
+
+  String? _banner1Url;
+  String? _banner2Url;
+
+  bool get _isLoggedIn => supabase.auth.currentSession != null;
 
   @override
   void initState() {
     super.initState();
-    _fetchFeatured();
+    _fetchBanners();
+    _fetchProjects();
+    _fetchDesigners();
+    _fetchListings();
+    _fetchBlogs();
+    _fetchForums();
   }
 
-  Future<void> _fetchFeatured() async {
-    await Future.wait([_fetchProjects(), _fetchDesigners()]);
+  Future<void> _fetchBanners() async {
+    try {
+      final data = await supabase.from('app_banners').select('slot, image_url');
+      for (final row in (data as List)) {
+        final slot = row['slot'] as int?;
+        final url = row['image_url'] as String?;
+        if (url != null && url.isNotEmpty) {
+          if (slot == 1 && mounted) setState(() => _banner1Url = url);
+          if (slot == 2 && mounted) setState(() => _banner2Url = url);
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> _fetchProjects() async {
@@ -89,17 +145,45 @@ class _HomeScreenState extends State<HomeScreen> {
           .select('id, designer_id, title, project_type, cover_image_url, budget_level, tags, is_published, created_at, designer_project_images(image_url, sort_order)')
           .eq('is_published', true)
           .order('created_at', ascending: false)
-          .limit(10);
+          .limit(12);
 
-      final all = (data as List).map((e) => DesignerProject.fromJson(e as Map<String, dynamic>)).toList();
-      all.shuffle();
-      if (mounted) {
-        setState(() {
-          _featuredProjects = all.take(5).toList();
-          _loadingProjects = false;
-        });
+      final projects = (data as List)
+          .map((e) => DesignerProject.fromJson(e as Map<String, dynamic>))
+          .toList();
+
+      // Fetch designer names separately
+      final designerIds = projects.map((p) => p.designerId).where((id) => id.isNotEmpty).toSet().toList();
+      Map<String, String> nameMap = {};
+      if (designerIds.isNotEmpty) {
+        try {
+          final profiles = await supabase
+              .from('profiles')
+              .select('id, full_name')
+              .inFilter('id', designerIds);
+          for (final p in (profiles as List)) {
+            final id = p['id'] as String?;
+            final name = p['full_name'] as String?;
+            if (id != null && name != null) nameMap[id] = name;
+          }
+        } catch (_) {}
       }
-    } catch (_) {
+
+      // Attach designer names via copyWith is not available — build enriched list
+      final enriched = projects.map((p) {
+        final name = nameMap[p.designerId];
+        if (name == null) return p;
+        return DesignerProject(
+          id: p.id, designerId: p.designerId, title: p.title, projectType: p.projectType,
+          location: p.location, description: p.description, tags: p.tags, budgetLevel: p.budgetLevel,
+          coverImageUrl: p.coverImageUrl, isPublished: p.isPublished, createdAt: p.createdAt,
+          images: p.images, shopLinks: p.shopLinks, designerName: name,
+        );
+      }).toList();
+
+      enriched.shuffle();
+      if (mounted) setState(() { _projects = enriched.take(6).toList(); _loadingProjects = false; });
+    } catch (e) {
+      debugPrint('_fetchProjects error: $e');
       if (mounted) setState(() => _loadingProjects = false);
     }
   }
@@ -109,36 +193,122 @@ class _HomeScreenState extends State<HomeScreen> {
       final data = await supabase
           .from('profiles')
           .select('id, full_name, business_name, avatar_url, specialty, city, cover_photo_url, tags, starting_from')
-          .inFilter('role', ['designer', 'designer_pending'])
+          .eq('role', 'designer')
           .limit(10);
 
       final all = (data as List).map((e) => Profile.fromJson(e as Map<String, dynamic>)).toList();
       all.shuffle();
+      if (mounted) setState(() { _designers = all.take(6).toList(); _loadingDesigners = false; });
+    } catch (e) {
+      if (mounted) setState(() => _loadingDesigners = false);
+    }
+  }
+
+  Future<void> _fetchListings() async {
+    try {
+      final data = await supabase
+          .from('listings')
+          .select('id, title, city, is_urgent, budget_min, budget_max, needed_professions, status')
+          .eq('status', 'published')
+          .order('is_urgent', ascending: false)
+          .order('created_at', ascending: false)
+          .limit(5);
+
       if (mounted) {
         setState(() {
-          _featuredDesigners = all.take(6).toList();
-          _loadingDesigners = false;
+          _listings = (data as List).map((e) => _ListingPreview.fromJson(e as Map<String, dynamic>)).toList();
+          _loadingListings = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loadingDesigners = false);
+    } catch (e) {
+      debugPrint('_fetchListings error: $e');
+      if (mounted) setState(() => _loadingListings = false);
+    }
+  }
+
+  Future<void> _fetchBlogs() async {
+    try {
+      final data = await supabase
+          .from('blog_posts')
+          .select('id, author_id, slug, title, excerpt, cover_image_url, published_at')
+          .eq('status', 'published')
+          .order('published_at', ascending: false)
+          .limit(2);
+
+      final posts = (data as List).cast<Map<String, dynamic>>();
+
+      // Fetch author profiles separately
+      final authorIds = posts.map((p) => p['author_id'] as String?).whereType<String>().toSet().toList();
+      Map<String, Map<String, dynamic>> authorMap = {};
+      if (authorIds.isNotEmpty) {
+        try {
+          final profiles = await supabase.from('profiles').select('id, full_name, avatar_url').inFilter('id', authorIds);
+          for (final p in (profiles as List)) {
+            final id = p['id'] as String?;
+            if (id != null) authorMap[id] = p as Map<String, dynamic>;
+          }
+        } catch (_) {}
+      }
+
+      final blogs = posts.map((p) {
+        final authorId = p['author_id'] as String?;
+        final profile = authorId != null ? authorMap[authorId] : null;
+        return _BlogPreview(
+          id: p['id'] as String,
+          slug: (p['slug'] as String?) ?? '',
+          title: (p['title'] as String?) ?? '',
+          excerpt: p['excerpt'] as String?,
+          coverImageUrl: p['cover_image_url'] as String?,
+          authorName: profile?['full_name'] as String?,
+          authorAvatarUrl: profile?['avatar_url'] as String?,
+        );
+      }).toList();
+
+      if (mounted) setState(() { _blogs = blogs; _loadingBlogs = false; });
+    } catch (e) {
+      debugPrint('_fetchBlogs error: $e');
+      if (mounted) setState(() => _loadingBlogs = false);
+    }
+  }
+
+  Future<void> _fetchForums() async {
+    try {
+      final data = await supabase
+          .from('forum_topics')
+          .select('id, slug, title, starter_body, last_post_at')
+          .order('last_post_at', ascending: false)
+          .limit(5);
+
+      if (mounted) {
+        setState(() {
+          _forums = (data as List).map((e) => _ForumPreview.fromJson(e as Map<String, dynamic>)).toList();
+          _loadingForums = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('_fetchForums error: $e');
+      if (mounted) setState(() => _loadingForums = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: const Color(0xFFF8F6F2),
       body: CustomScrollView(
         slivers: [
-          _buildAppBar(context),
-          SliverToBoxAdapter(child: _buildCategories()),
-          SliverToBoxAdapter(child: _buildFeaturedProjects()),
-          SliverToBoxAdapter(child: _buildDesigners()),
-          SliverToBoxAdapter(child: _buildTagBanner()),
-          SliverToBoxAdapter(child: _buildServices()),
+          _buildAppBar(),
+          SliverToBoxAdapter(child: _buildSearchBar()),
+          if (_banner1Url != null) SliverToBoxAdapter(child: _buildHeroBanner()),
+          SliverToBoxAdapter(child: _buildQuickActions()),
+          SliverToBoxAdapter(child: _buildIlhamAl()),
+          SliverToBoxAdapter(child: _buildProfessionals()),
+          if (_banner2Url != null) SliverToBoxAdapter(child: _buildSecondBanner()),
+          SliverToBoxAdapter(child: _buildIlanlar()),
+          SliverToBoxAdapter(child: _buildBlog()),
+          SliverToBoxAdapter(child: _buildForum()),
           SliverToBoxAdapter(child: _buildFooter()),
-          const SliverToBoxAdapter(child: SizedBox(height: 24)),
+          const SliverToBoxAdapter(child: SizedBox(height: 32)),
         ],
       ),
     );
@@ -146,345 +316,507 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── App Bar ──────────────────────────────────────────────────
 
-  Widget _buildAppBar(BuildContext context) {
+  Widget _buildAppBar() {
     return SliverAppBar(
       floating: true,
       snap: true,
       backgroundColor: Colors.white,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
-      toolbarHeight: 56,
-      expandedHeight: 112,
+      toolbarHeight: 60,
       bottom: PreferredSize(
         preferredSize: const Size.fromHeight(1),
         child: Container(height: 1, color: AppColors.border),
       ),
       title: Row(
         children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: AppColors.primary,
-              borderRadius: BorderRadius.circular(9),
-            ),
-            child: const Center(
-              child: Text('E', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800)),
-            ),
-          ),
+          Image.asset('assets/web_icon2.png', width: 32, height: 32, fit: BoxFit.contain),
           const SizedBox(width: 8),
-          const Text(
-            'Evlumba',
-            style: TextStyle(color: AppColors.textPrimary, fontSize: 20, fontWeight: FontWeight.w800),
-          ),
+          const Text('evlumba', style: TextStyle(color: Color(0xFF0E5A3A), fontSize: 20, fontWeight: FontWeight.w800)),
           const Spacer(),
+          _AppBarIcon(icon: Icons.notifications_none_rounded, onTap: () {}),
+          const SizedBox(width: 6),
+          _AppBarIcon(icon: Icons.chat_bubble_outline_rounded, onTap: () => context.go('/messages')),
+          const SizedBox(width: 6),
           GestureDetector(
-            onTap: () => context.go('/profile'),
+            onTap: () => _isLoggedIn ? context.go('/profile') : context.go('/login'),
             child: Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: AppColors.border, width: 1.5),
-                color: AppColors.background,
-              ),
+              width: 34, height: 34,
+              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.border, width: 1.5), color: AppColors.background),
               child: const Icon(Icons.person_outline_rounded, size: 20, color: AppColors.textSecondary),
             ),
           ),
         ],
       ),
-      flexibleSpace: FlexibleSpaceBar(
-        collapseMode: CollapseMode.pin,
-        background: Column(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-              child: GestureDetector(
-                onTap: () => context.go('/explore'),
-                child: Container(
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: AppColors.background,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: const Row(
-                    children: [
-                      SizedBox(width: 12),
-                      Icon(Icons.search_rounded, size: 20, color: AppColors.textSecondary),
-                      SizedBox(width: 8),
-                      Text(
-                        'Proje, oda, tasarımcı ara...',
-                        style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+    );
+  }
+
+  // ── Search Bar ───────────────────────────────────────────────
+
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+      child: GestureDetector(
+        onTap: () => context.go('/explore'),
+        child: Container(
+          height: 48,
+          decoration: BoxDecoration(
+            color: Colors.white, borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.border),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
+          ),
+          child: Row(children: [
+            const SizedBox(width: 14),
+            const Icon(Icons.search_rounded, size: 20, color: AppColors.textSecondary),
+            const SizedBox(width: 10),
+            const Expanded(child: Text('Proje, ürün, mimar ara...', style: TextStyle(fontSize: 14, color: AppColors.textSecondary))),
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 9, horizontal: 10),
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(color: const Color(0xFFF0F0EC), borderRadius: BorderRadius.circular(8)),
+              child: const Icon(Icons.tune_rounded, size: 15, color: AppColors.textSecondary),
             ),
-          ],
+          ]),
         ),
       ),
     );
   }
 
-  // ── Categories ───────────────────────────────────────────────
+  // ── Hero Banner ──────────────────────────────────────────────
 
-  Widget _buildCategories() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 20),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text('Kategoriler', style: _sectionTitle()),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 108,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
-            itemCount: _categories.length,
-            itemBuilder: (context, i) {
-              final cat = _categories[i];
-              return GestureDetector(
-                onTap: () => context.go('/explore'),
-                child: SizedBox(
-                  width: 80,
-                  child: Column(
-                    children: [
-                      Container(
-                        width: 80,
-                        height: 80,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: AppColors.border),
-                        ),
-                        clipBehavior: Clip.hardEdge,
-                        child: CachedNetworkImage(
-                          imageUrl: cat.imageUrl,
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) => Container(color: AppColors.border),
-                          errorWidget: (_, __, ___) => Container(
-                            color: AppColors.border,
-                            child: const Icon(Icons.image_outlined, color: AppColors.textSecondary),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        cat.label,
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
+  Widget _buildHeroBanner() {
+    return _FullWidthBanner(imageUrl: _banner1Url!, topPadding: 16);
+  }
+
+  // ── Quick Actions ────────────────────────────────────────────
+
+  Widget _buildQuickActions() {
+    final items = [
+      (Icons.forum_outlined, 'Forum', () => context.go('/forum')),
+      (Icons.auto_awesome_outlined, 'AI Tasarla', () {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Çok yakında!'), duration: Duration(seconds: 1)));
+      }),
+      (Icons.article_outlined, 'Blog', () => context.go('/blog')),
+      (Icons.work_outline_rounded, 'İlanlar', () => context.go('/ilanlar')),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+      child: Row(
+        children: [
+          for (int i = 0; i < items.length; i++) ...[
+            Expanded(
+              child: GestureDetector(
+                onTap: items[i].$3,
+                child: Container(
+                  height: 76,
+                  decoration: BoxDecoration(
+                    color: Colors.white, borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.border),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
                   ),
+                  child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Icon(items[i].$1, size: 24, color: const Color(0xFF0E5A3A)),
+                    const SizedBox(height: 5),
+                    Text(items[i].$2, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textPrimary), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ]),
                 ),
-              );
-            },
-          ),
-        ),
-      ],
+              ),
+            ),
+            if (i < items.length - 1) const SizedBox(width: 8),
+          ],
+        ],
+      ),
     );
   }
 
-  // ── Featured Projects ─────────────────────────────────────────
+  // ── İlham Al ─────────────────────────────────────────────────
 
-  Widget _buildFeaturedProjects() {
+  Widget _buildIlhamAl() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 28),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            children: [
-              Expanded(child: Text('İlham Veren Tasarımlar', style: _sectionTitle())),
-              TextButton(
-                onPressed: () => context.go('/explore'),
-                child: const Text('Tümü', style: TextStyle(fontSize: 13, color: AppColors.primary, fontWeight: FontWeight.w600)),
+          child: Row(children: [
+            const Text('İlham', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+            const SizedBox(width: 4),
+            const Text('✦', style: TextStyle(fontSize: 12, color: Color(0xFF0E5A3A))),
+            const Spacer(),
+            GestureDetector(
+              onTap: () => context.go('/explore'),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(color: const Color(0xFF0E5A3A), borderRadius: BorderRadius.circular(20)),
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Text('Tümünü gör', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600)),
+                  SizedBox(width: 3),
+                  Icon(Icons.chevron_right, size: 15, color: Colors.white),
+                ]),
               ),
-            ],
-          ),
+            ),
+          ]),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         SizedBox(
-          height: 220,
+          height: 200,
           child: _loadingProjects
               ? ListView.separated(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  separatorBuilder: (_, __) => const SizedBox(width: 12),
-                  itemCount: 5,
-                  itemBuilder: (_, __) => _ProjectSkeletonCard(),
+                  separatorBuilder: (_, __) => const SizedBox(width: 10),
+                  itemCount: 4,
+                  itemBuilder: (_, __) => const SizedBox(width: 150, child: _SkeletonBox(height: 200)),
                 )
-              : _featuredProjects.isEmpty
+              : _projects.isEmpty
                   ? const Center(child: Text('Henüz proje yok', style: TextStyle(color: AppColors.textSecondary)))
                   : ListView.separated(
                       scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      separatorBuilder: (_, __) => const SizedBox(width: 12),
-                      itemCount: _featuredProjects.length,
-                      itemBuilder: (context, i) => _FeaturedProjectCard(project: _featuredProjects[i]),
+                      separatorBuilder: (_, __) => const SizedBox(width: 10),
+                      itemCount: _projects.length,
+                      itemBuilder: (context, i) => SizedBox(
+                        width: 150,
+                        child: _DiscoverCard(
+                          project: _projects[i],
+                          height: 200,
+                          onTap: () {
+                            if (!_isLoggedIn) { context.go('/login'); return; }
+                            context.push('/projects/${_projects[i].id}');
+                          },
+                        ),
+                      ),
                     ),
         ),
       ],
     );
   }
 
-  // ── Designers ─────────────────────────────────────────────────
+  // ── Profesyoneller ────────────────────────────────────────────
 
-  Widget _buildDesigners() {
+  Widget _buildProfessionals() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 28),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            children: [
-              Expanded(child: Text('Profesyoneller', style: _sectionTitle())),
-              TextButton(
-                onPressed: () => context.go('/designers-list'),
-                child: const Text('Tümü', style: TextStyle(fontSize: 13, color: AppColors.primary, fontWeight: FontWeight.w600)),
+          child: Row(children: [
+            const Text('Profesyoneller', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+            const SizedBox(width: 4),
+            const Text('✦', style: TextStyle(fontSize: 12, color: Color(0xFF0E5A3A))),
+            const Spacer(),
+            GestureDetector(
+              onTap: () => context.push('/designers-list'),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(color: const Color(0xFF0E5A3A), borderRadius: BorderRadius.circular(20)),
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Text('Tümünü gör', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600)),
+                  SizedBox(width: 3),
+                  Icon(Icons.chevron_right, size: 15, color: Colors.white),
+                ]),
               ),
-            ],
-          ),
+            ),
+          ]),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         SizedBox(
-          height: 130,
+          height: 110,
           child: _loadingDesigners
               ? ListView.separated(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  separatorBuilder: (_, __) => const SizedBox(width: 12),
+                  separatorBuilder: (_, __) => const SizedBox(width: 14),
                   itemCount: 5,
-                  itemBuilder: (_, __) => _DesignerSkeletonCard(),
+                  itemBuilder: (_, __) => const _SkeletonAvatar(),
                 )
-              : _featuredDesigners.isEmpty
-                  ? const Center(child: Text('Henüz tasarımcı yok', style: TextStyle(color: AppColors.textSecondary)))
-                  : ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      separatorBuilder: (_, __) => const SizedBox(width: 12),
-                      itemCount: _featuredDesigners.length,
-                      itemBuilder: (context, i) => _DesignerMiniCard(designer: _featuredDesigners[i]),
-                    ),
+              : ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  separatorBuilder: (_, __) => const SizedBox(width: 14),
+                  itemCount: _designers.length,
+                  itemBuilder: (context, i) {
+                    final d = _designers[i];
+                    return _DesignerChip(designer: d, onTap: () {
+                      if (!_isLoggedIn) { context.go('/login'); return; }
+                      context.push('/designers/${d.id}');
+                    });
+                  },
+                ),
         ),
       ],
     );
   }
 
-  // ── Tag & Earn Banner ─────────────────────────────────────────
+  // ── Second Banner ─────────────────────────────────────────────
 
-  Widget _buildTagBanner() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 28, 16, 0),
-      child: GestureDetector(
-        onTap: () {},
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF0369A1), Color(0xFF0284C7), Color(0xFF38BDF8)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.primary.withValues(alpha: 0.3),
-                blurRadius: 20,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Text('Yeni Özellik ✨', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Etiketle ve Kazan',
-                      style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Projelerine ürün etiketi ekle,\nhakiki gelir elde et.',
-                      style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
-                    ),
-                    const SizedBox(height: 14),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Text(
-                        'Hemen Başla →',
-                        style: TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.sell_outlined, color: Colors.white, size: 40),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+  Widget _buildSecondBanner() {
+    return _FullWidthBanner(imageUrl: _banner2Url!, topPadding: 28);
   }
 
-  // ── Services ──────────────────────────────────────────────────
+  // ── İlanlar ───────────────────────────────────────────────────
 
-  Widget _buildServices() {
+  Widget _buildIlanlar() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 28),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text('Hizmetler', style: _sectionTitle()),
+          child: Row(children: [
+            const Text('İlanlar', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+            const Spacer(),
+            GestureDetector(
+              onTap: () => context.go('/ilanlar'),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(color: const Color(0xFF0E5A3A), borderRadius: BorderRadius.circular(20)),
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Text('Tümünü gör', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600)),
+                  SizedBox(width: 3),
+                  Icon(Icons.chevron_right, size: 15, color: Colors.white),
+                ]),
+              ),
+            ),
+          ]),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 12),
+        if (_loadingListings)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(children: List.generate(2, (_) => Padding(padding: const EdgeInsets.only(bottom: 10), child: _SkeletonBox(height: 70)))),
+          )
+        else if (_listings.isEmpty)
+          const Padding(padding: EdgeInsets.fromLTRB(16, 8, 16, 0), child: Text('Aktif ilan yok.', style: TextStyle(color: AppColors.textSecondary)))
+        else
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              children: _listings.map((l) => GestureDetector(
+                onTap: () => context.go('/ilanlar'),
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white, borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.border),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
+                  ),
+                  child: Row(children: [
+                    Container(
+                      width: 42, height: 42,
+                      decoration: BoxDecoration(color: const Color(0xFF0E5A3A).withOpacity(0.08), borderRadius: BorderRadius.circular(12)),
+                      child: const Icon(Icons.work_outline_rounded, color: Color(0xFF0E5A3A), size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Row(children: [
+                        if (l.isUrgent) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(color: const Color(0xFFDC2626).withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
+                            child: const Text('Acil', style: TextStyle(fontSize: 9, color: Color(0xFFDC2626), fontWeight: FontWeight.w700)),
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                        Expanded(child: Text(l.title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                      ]),
+                      const SizedBox(height: 3),
+                      Row(children: [
+                        const Icon(Icons.location_on_outlined, size: 12, color: AppColors.textSecondary),
+                        const SizedBox(width: 2),
+                        Text(l.city, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                        if (l.budgetMin != null) ...[
+                          const SizedBox(width: 8),
+                          Text('₺${l.budgetMin} – ₺${l.budgetMax ?? '?'}', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                        ],
+                      ]),
+                    ])),
+                    const Icon(Icons.chevron_right, size: 18, color: AppColors.textSecondary),
+                  ]),
+                ),
+              )).toList(),
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ── Blog ──────────────────────────────────────────────────────
+
+  Widget _buildBlog() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 28),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: GridView.count(
-            crossAxisCount: 3,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: 1.0,
-            children: _services.map((s) => _ServiceTile(service: s)).toList(),
-          ),
+          child: Row(children: [
+            const Text('Blog', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+            const Spacer(),
+            GestureDetector(
+              onTap: () => context.go('/blog'),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(color: const Color(0xFF0E5A3A), borderRadius: BorderRadius.circular(20)),
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Text('Tümünü gör', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600)),
+                  SizedBox(width: 3),
+                  Icon(Icons.chevron_right, size: 15, color: Colors.white),
+                ]),
+              ),
+            ),
+          ]),
         ),
+        const SizedBox(height: 12),
+        if (_loadingBlogs)
+          SizedBox(
+            height: 280,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: 2,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (_, __) => const SizedBox(width: 240, child: _SkeletonBox(height: 280)),
+            ),
+          )
+        else if (_blogs.isEmpty)
+          const Padding(padding: EdgeInsets.fromLTRB(16, 8, 16, 0), child: Text('Henüz blog yazısı yok.', style: TextStyle(color: AppColors.textSecondary)))
+        else
+          SizedBox(
+            height: 280,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: _blogs.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (context, i) {
+                final b = _blogs[i];
+                return GestureDetector(
+                  onTap: () => context.go('/blog'),
+                  child: SizedBox(
+                    width: 240,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white, borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.border),
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
+                      ),
+                      clipBehavior: Clip.hardEdge,
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        if (b.coverImageUrl != null && b.coverImageUrl!.isNotEmpty)
+                          SizedBox(
+                            height: 130,
+                            width: double.infinity,
+                            child: SmartImage(url: b.coverImageUrl, fit: BoxFit.cover, width: double.infinity),
+                          ),
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text(b.title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary), maxLines: 2, overflow: TextOverflow.ellipsis),
+                            if (b.excerpt != null && b.excerpt!.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(b.excerpt!, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, height: 1.4), maxLines: 2, overflow: TextOverflow.ellipsis),
+                            ],
+                            const SizedBox(height: 10),
+                            Row(children: [
+                              Container(
+                                width: 24, height: 24,
+                                decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.border)),
+                                clipBehavior: Clip.hardEdge,
+                                child: b.authorAvatarUrl != null && b.authorAvatarUrl!.isNotEmpty
+                                    ? SmartImage(url: b.authorAvatarUrl, fit: BoxFit.cover)
+                                    : Container(color: const Color(0xFF0E5A3A).withOpacity(0.1),
+                                        child: Center(child: Text((b.authorName ?? 'P').substring(0, 1).toUpperCase(),
+                                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF0E5A3A))))),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(child: Text(b.authorName ?? 'Yazar', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                            ]),
+                          ]),
+                        ),
+                      ]),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ── Forum ─────────────────────────────────────────────────────
+
+  Widget _buildForum() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 28),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(children: [
+            const Text('Forum', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+            const Spacer(),
+            GestureDetector(
+              onTap: () => context.go('/forum'),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(color: const Color(0xFF0E5A3A), borderRadius: BorderRadius.circular(20)),
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Text('Tümünü gör', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600)),
+                  SizedBox(width: 3),
+                  Icon(Icons.chevron_right, size: 15, color: Colors.white),
+                ]),
+              ),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 12),
+        if (_loadingForums)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(children: List.generate(3, (_) => Padding(padding: const EdgeInsets.only(bottom: 10), child: _SkeletonBox(height: 60)))),
+          )
+        else if (_forums.isEmpty)
+          const Padding(padding: EdgeInsets.fromLTRB(16, 8, 16, 0), child: Text('Henüz forum yazısı yok.', style: TextStyle(color: AppColors.textSecondary)))
+        else
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              children: _forums.map((f) => GestureDetector(
+                onTap: () => context.go('/forum'),
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white, borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.border),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
+                  ),
+                  child: Row(children: [
+                    Container(
+                      width: 36, height: 36,
+                      decoration: BoxDecoration(color: const Color(0xFF0E5A3A).withOpacity(0.08), borderRadius: BorderRadius.circular(10)),
+                      child: const Icon(Icons.forum_outlined, color: Color(0xFF0E5A3A), size: 18),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(f.title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary), maxLines: 2, overflow: TextOverflow.ellipsis),
+                      if (f.starterBody != null && f.starterBody!.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(f.starterBody!, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ],
+                    ])),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.chevron_right, size: 18, color: AppColors.textSecondary),
+                  ]),
+                ),
+              )).toList(),
+            ),
+          ),
       ],
     );
   }
@@ -492,230 +824,197 @@ class _HomeScreenState extends State<HomeScreen> {
   // ── Footer ────────────────────────────────────────────────────
 
   Widget _buildFooter() {
-    return Column(
-      children: [
-        const SizedBox(height: 32),
-        Container(height: 1, color: AppColors.border),
-        const SizedBox(height: 16),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _FooterLink(label: 'SSS', onTap: () {}),
-            _FooterDot(),
-            _FooterLink(label: 'İletişim', onTap: () {}),
-            _FooterDot(),
-            _FooterLink(label: 'Gizlilik', onTap: () {}),
-          ],
-        ),
-        const SizedBox(height: 10),
-        const Text(
-          '© 2025 Evlumba',
-          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-        ),
-        const SizedBox(height: 16),
-      ],
-    );
+    return Column(children: [
+      const SizedBox(height: 32),
+      Container(height: 1, color: AppColors.border),
+      const SizedBox(height: 16),
+      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        GestureDetector(onTap: () {}, child: const Text('SSS', style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500))),
+        const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('·', style: TextStyle(color: AppColors.textSecondary))),
+        GestureDetector(onTap: () {}, child: const Text('İletişim', style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500))),
+        const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('·', style: TextStyle(color: AppColors.textSecondary))),
+        GestureDetector(onTap: () {}, child: const Text('Gizlilik', style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500))),
+      ]),
+      const SizedBox(height: 10),
+      const Text('© 2025 Evlumba', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+      const SizedBox(height: 16),
+    ]);
   }
-
-  TextStyle _sectionTitle() => const TextStyle(
-        fontSize: 18,
-        fontWeight: FontWeight.w700,
-        color: AppColors.textPrimary,
-      );
 }
 
-// ────────────────────────────────────────────────────────────────
-// Sub-widgets
-// ────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared Banner Widget
+// ─────────────────────────────────────────────────────────────────────────────
 
-class _FeaturedProjectCard extends StatelessWidget {
+class _FullWidthBanner extends StatelessWidget {
+  final String imageUrl;
+  final double topPadding;
+
+  const _FullWidthBanner({required this.imageUrl, this.topPadding = 0});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, topPadding, 16, 0),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: CachedNetworkImage(
+          imageUrl: imageUrl,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          placeholder: (_, __) => Container(height: 160, color: AppColors.border.withOpacity(0.4)),
+          errorWidget: (_, __, ___) => const SizedBox.shrink(),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Discover Grid
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _DiscoverGrid extends StatelessWidget {
+  final List<DesignerProject> projects;
+  final void Function(DesignerProject) onTap;
+  const _DiscoverGrid({required this.projects, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final left = <DesignerProject>[], right = <DesignerProject>[];
+    for (int i = 0; i < projects.length; i++) {
+      (i % 2 == 0 ? left : right).add(projects[i]);
+    }
+
+    Widget col(List<DesignerProject> items) => Column(
+      children: items.asMap().entries.map((e) => Padding(
+        padding: EdgeInsets.only(bottom: e.key < items.length - 1 ? 10 : 0),
+        child: _DiscoverCard(project: e.value, height: 200, onTap: () => onTap(e.value)),
+      )).toList(),
+    );
+
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Expanded(child: col(left)), const SizedBox(width: 10), Expanded(child: col(right)),
+    ]);
+  }
+}
+
+class _DiscoverCard extends StatelessWidget {
   final DesignerProject project;
-  const _FeaturedProjectCard({required this.project});
+  final double height;
+  final VoidCallback onTap;
+  const _DiscoverCard({required this.project, required this.height, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final imgUrl = project.displayCoverUrl;
+    final name = project.designerName ?? '';
     return GestureDetector(
-      onTap: () => context.push('/projects/${project.id}'),
+      onTap: onTap,
       child: Container(
-        width: 160,
+        height: height,
         decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.border),
-          boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2)),
-          ],
+          color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.border),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
         ),
         clipBehavior: Clip.hardEdge,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              flex: 3,
-              child: imgUrl.isNotEmpty
-                  ? SmartImage(url: imgUrl, fit: BoxFit.cover, width: double.infinity)
-                  : Container(color: AppColors.border, child: const Icon(Icons.image_outlined, color: AppColors.textSecondary, size: 32)),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(project.title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  if (project.projectType != null) ...[
-                    const SizedBox(height: 2),
-                    Text(project.projectType!, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: imgUrl.isNotEmpty
+              ? SmartImage(url: imgUrl, fit: BoxFit.cover, width: double.infinity)
+              : Container(color: AppColors.border, child: const Icon(Icons.image_outlined, color: AppColors.textSecondary))),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 7, 8, 8),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(project.title, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 3),
+              Row(children: [
+                Expanded(child: Text(name.isNotEmpty ? name.split(' ').first : (project.projectType ?? ''),
+                    style: const TextStyle(fontSize: 10, color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                const Icon(Icons.favorite_border_rounded, size: 12, color: AppColors.textSecondary),
+              ]),
+            ]),
+          ),
+        ]),
       ),
     );
   }
 }
 
-class _DesignerMiniCard extends StatelessWidget {
-  final Profile designer;
-  const _DesignerMiniCard({required this.designer});
+// ─────────────────────────────────────────────────────────────────────────────
+// Small shared widgets
+// ─────────────────────────────────────────────────────────────────────────────
 
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => context.push('/designers/${designer.id}'),
-      child: Container(
-        width: 110,
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.border),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2))],
-        ),
-        clipBehavior: Clip.hardEdge,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const SizedBox(height: 12),
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.border, width: 2)),
-              clipBehavior: Clip.hardEdge,
-              child: designer.avatarUrl != null && designer.avatarUrl!.isNotEmpty
-                  ? SmartImage(url: designer.avatarUrl, fit: BoxFit.cover)
-                  : Container(color: AppColors.primary.withValues(alpha: 0.1), child: const Icon(Icons.person, color: AppColors.primary, size: 28)),
-            ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              child: Text(
-                designer.displayName.split(' ').first,
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            if (designer.city != null) ...[
-              const SizedBox(height: 2),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Text(designer.city!, style: const TextStyle(fontSize: 10, color: AppColors.textSecondary), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
-              ),
-            ],
-            const SizedBox(height: 12),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ServiceTile extends StatelessWidget {
-  final _Service service;
-  const _ServiceTile({required this.service});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        // Routes like /forum, /blog not yet implemented — show snackbar
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${service.label} yakında!'), duration: const Duration(seconds: 1)),
-        );
-      },
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.border),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 6, offset: const Offset(0, 2))],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(color: service.iconBg, borderRadius: BorderRadius.circular(14)),
-              child: Icon(service.icon, color: service.color, size: 22),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              service.label,
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ProjectSkeletonCard extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 160,
-      decoration: BoxDecoration(color: AppColors.border.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(16)),
-    );
-  }
-}
-
-class _DesignerSkeletonCard extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 110,
-      decoration: BoxDecoration(color: AppColors.border.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(16)),
-    );
-  }
-}
-
-class _FooterLink extends StatelessWidget {
-  final String label;
+class _AppBarIcon extends StatelessWidget {
+  final IconData icon;
   final VoidCallback onTap;
-  const _FooterLink({required this.label, required this.onTap});
+  const _AppBarIcon({required this.icon, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Text(label, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500)),
+      child: Container(
+        width: 34, height: 34,
+        decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.border, width: 1.5), color: AppColors.background),
+        child: Icon(icon, size: 18, color: AppColors.textSecondary),
+      ),
     );
   }
 }
 
-class _FooterDot extends StatelessWidget {
+class _DesignerChip extends StatelessWidget {
+  final Profile designer;
+  final VoidCallback onTap;
+  const _DesignerChip({required this.designer, required this.onTap});
+
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.symmetric(horizontal: 8),
-      child: Text('·', style: TextStyle(color: AppColors.textSecondary)),
+    return GestureDetector(
+      onTap: onTap,
+      child: SizedBox(width: 72, child: Column(children: [
+        Container(
+          width: 58, height: 58,
+          decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0xFF0E5A3A).withOpacity(0.3), width: 2)),
+          clipBehavior: Clip.hardEdge,
+          child: designer.avatarUrl != null && designer.avatarUrl!.isNotEmpty
+              ? SmartImage(url: designer.avatarUrl, fit: BoxFit.cover)
+              : Container(color: const Color(0xFF0E5A3A).withOpacity(0.1),
+                  child: Center(child: Text(designer.displayName.substring(0, 1).toUpperCase(),
+                      style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0E5A3A), fontSize: 22)))),
+        ),
+        const SizedBox(height: 6),
+        Text(designer.displayName.split(' ').first, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textPrimary), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
+        if (designer.specialty != null) ...[
+          const SizedBox(height: 1),
+          Text(designer.specialty!, style: const TextStyle(fontSize: 9, color: AppColors.textSecondary), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
+        ],
+      ])),
     );
+  }
+}
+
+class _SkeletonBox extends StatelessWidget {
+  final double height;
+  const _SkeletonBox({required this.height});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: height,
+      decoration: BoxDecoration(color: AppColors.border.withOpacity(0.5), borderRadius: BorderRadius.circular(16)),
+    );
+  }
+}
+
+class _SkeletonAvatar extends StatelessWidget {
+  const _SkeletonAvatar();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(width: 72, child: Column(children: [
+      Container(width: 58, height: 58, decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.border.withOpacity(0.5))),
+      const SizedBox(height: 6),
+      Container(width: 48, height: 10, decoration: BoxDecoration(color: AppColors.border.withOpacity(0.5), borderRadius: BorderRadius.circular(4))),
+    ]));
   }
 }

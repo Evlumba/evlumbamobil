@@ -61,6 +61,7 @@ class DesignerProject {
   final DateTime createdAt;
   final List<ProjectImage> images;
   final List<ShopLink> shopLinks;
+  final String? designerName;
 
   const DesignerProject({
     required this.id,
@@ -76,6 +77,7 @@ class DesignerProject {
     required this.createdAt,
     this.images = const [],
     this.shopLinks = const [],
+    this.designerName,
   });
 
   factory DesignerProject.fromJson(Map<String, dynamic> json) {
@@ -90,6 +92,8 @@ class DesignerProject {
             ?.map((e) => ShopLink.fromJson(e as Map<String, dynamic>))
             .toList() ??
         [];
+
+    final profileData = json['profiles'] as Map<String, dynamic>?;
 
     return DesignerProject(
       id: json['id'] as String,
@@ -107,6 +111,7 @@ class DesignerProject {
           : DateTime.now(),
       images: imageList,
       shopLinks: shopLinkList,
+      designerName: profileData?['full_name'] as String?,
     );
   }
 

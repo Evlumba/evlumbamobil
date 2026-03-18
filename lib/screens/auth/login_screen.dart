@@ -41,7 +41,7 @@ class _LoginScreenState extends State<LoginScreen> {
         password: _passwordController.text.trim(),
       );
       if (mounted) {
-        context.go('/explore');
+        context.go('/home');
       }
     } on AuthException catch (e) {
       setState(() {
@@ -111,25 +111,18 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 32),
+              const SizedBox(height: 8),
+              IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => context.go('/home'),
+              ),
+              const SizedBox(height: 8),
               Center(
-                child: Container(
-                  width: 60,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'E',
-                      style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
+                child: Image.asset(
+                  'assets/web_icon2.png',
+                  width: double.infinity,
+                  height: 140,
+                  fit: BoxFit.contain,
                 ),
               ),
               const SizedBox(height: 32),
