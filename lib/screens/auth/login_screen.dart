@@ -28,6 +28,53 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  Future<void> _forgotPassword() async {
+    final emailController = TextEditingController(text: _emailController.text.trim());
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Şifre Sıfırla'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('E-posta adresinizi girin, şifre sıfırlama bağlantısı gönderelim.', style: TextStyle(fontSize: 13)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: emailController,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(labelText: 'E-posta', prefixIcon: Icon(Icons.email_outlined)),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('İptal')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, emailController.text.trim()),
+            child: const Text('Gönder'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == null || result.isEmpty || !mounted) return;
+
+    try {
+      await supabase.auth.resetPasswordForEmail(result);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Şifre sıfırlama bağlantısı gönderildi. E-postanı kontrol et.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Hata: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
   Future<void> _signIn() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() {
@@ -222,7 +269,13 @@ class _LoginScreenState extends State<LoginScreen> {
                         return null;
                       },
                     ),
-                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: _forgotPassword,
+                        child: const Text('Şifremi Unuttum', style: TextStyle(fontSize: 13)),
+                      ),
+                    ),
                     if (_errorMessage != null)
                       Container(
                         width: double.infinity,
