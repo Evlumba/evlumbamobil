@@ -19,6 +19,7 @@ import '../screens/designer_panel/edit_profile_screen.dart';
 import '../screens/designer_panel/projects_screen.dart';
 import '../screens/designer_panel/project_form_screen.dart';
 import '../screens/web/web_screen.dart';
+import '../screens/profile/profile_settings_screen.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final _shellNavigatorKey = GlobalKey<NavigatorState>();
@@ -36,7 +37,7 @@ GoRouter buildRouter() {
       const publicPrefixes = [
         '/splash', '/login', '/register',
         '/home', '/explore', '/designers-list',
-        '/forum', '/blog', '/ilanlar', '/forum-tab',
+        '/forum', '/blog', '/ilanlar', '/forum-tab', '/sss',
       ];
       final isPublic = publicPrefixes.any((p) => location.startsWith(p));
 
@@ -56,6 +57,21 @@ GoRouter buildRouter() {
         path: '/profile',
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => const ProfileScreen(),
+      ),
+      // Profile settings (native)
+      GoRoute(
+        path: '/profile-settings',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) {
+          final tab = (state.extra as String?) ?? 'general';
+          return ProfileSettingsScreen(tab: tab);
+        },
+      ),
+      // SSS
+      GoRoute(
+        path: '/sss',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (_, __) => const WebScreen(url: 'https://www.evlumba.com/sss', title: 'Yardım'),
       ),
       // Web screens (Forum, Blog, İlanlar)
       GoRoute(
