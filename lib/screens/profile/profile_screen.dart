@@ -93,6 +93,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final email = currentUser?.email ?? '';
     final isDesigner = profile?.isDesigner == true;
     final isHomeowner = !isDesigner;
+    final isAdmin = profile?.isAdmin == true;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F6F2),
@@ -233,6 +234,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     title: 'Tasarımcı Paneli',
                     subtitle: 'Profilini düzenle, projelerini yönet',
                     onTap: () => context.push('/panel'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+
+              if (isAdmin) ...[
+                _SectionHeader(title: 'Yönetim'),
+                Container(
+                  color: AppColors.surface,
+                  child: _MenuItem(
+                    icon: Icons.admin_panel_settings_outlined,
+                    title: 'Admin Panel',
+                    subtitle: 'Site yönetim paneli',
+                    onTap: () => context.push('/admin'),
                   ),
                 ),
                 const SizedBox(height: 8),

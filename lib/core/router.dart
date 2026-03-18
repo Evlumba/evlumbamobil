@@ -67,6 +67,12 @@ GoRouter buildRouter() {
           return ProfileSettingsScreen(tab: tab);
         },
       ),
+      // Admin panel
+      GoRoute(
+        path: '/admin',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (_, __) => const WebScreen(url: 'https://www.evlumba.com/admin', title: 'Admin Panel'),
+      ),
       // SSS
       GoRoute(
         path: '/sss',

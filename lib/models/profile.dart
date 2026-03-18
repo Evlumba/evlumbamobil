@@ -104,6 +104,9 @@ class Profile {
   bool get isDesigner =>
       role == 'designer' || role == 'designer_pending';
 
+  bool get isAdmin =>
+      role == 'admin' || role == 'super_admin';
+
   Profile copyWith({
     String? fullName,
     String? role,
