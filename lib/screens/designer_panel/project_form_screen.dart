@@ -7,13 +7,13 @@ import '../../core/theme.dart';
 import '../../models/designer_project.dart';
 
 const List<String> _projectTypes = [
-  'Salon',
+  'Oturma Odası',
   'Mutfak',
   'Banyo',
   'Yatak Odası',
   'Çocuk Odası',
   'Ofis',
-  'Koridor',
+  'Antre',
   'Bahçe',
   'Diğer',
 ];

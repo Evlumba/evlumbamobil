@@ -8,13 +8,13 @@ import '../../widgets/shimmer_card.dart';
 
 const List<String> _roomCategories = [
   'Tümü',
-  'Salon',
+  'Oturma Odası',
   'Mutfak',
   'Banyo',
   'Yatak Odası',
   'Çocuk Odası',
   'Ofis',
-  'Koridor',
+  'Antre',
   'Bahçe',
 ];
 
