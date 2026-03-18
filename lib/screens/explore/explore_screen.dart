@@ -34,12 +34,28 @@ class _ExploreScreenState extends State<ExploreScreen> {
   int _page = 0;
   static const int _pageSize = 20;
   final _scrollController = ScrollController();
+  Set<String> _nonEmptyCategories = {};
 
   @override
   void initState() {
     super.initState();
+    _fetchCategoryCounts();
     _fetchProjects();
     _scrollController.addListener(_onScroll);
+  }
+
+  Future<void> _fetchCategoryCounts() async {
+    try {
+      final data = await supabase
+          .from('designer_projects')
+          .select('project_type')
+          .eq('is_published', true);
+      final types = (data as List)
+          .map((e) => (e as Map<String, dynamic>)['project_type'] as String?)
+          .whereType<String>()
+          .toSet();
+      if (mounted) setState(() => _nonEmptyCategories = types);
+    } catch (_) {}
   }
 
   @override
@@ -117,6 +133,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
     _fetchProjects(refresh: true);
   }
 
+  List<String> get _visibleCategories => _roomCategories
+      .where((c) => c == 'Tümü' || _nonEmptyCategories.contains(c))
+      .toList();
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -145,9 +165,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       horizontal: 16,
                       vertical: 8,
                     ),
-                    itemCount: _roomCategories.length,
+                    itemCount: _visibleCategories.length,
                     itemBuilder: (context, index) {
-                      final category = _roomCategories[index];
+                      final category = _visibleCategories[index];
                       final isSelected = _selectedCategory == category;
                       return Padding(
                         padding: const EdgeInsets.only(right: 8),
