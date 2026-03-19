@@ -60,7 +60,10 @@ class _LoginScreenState extends State<LoginScreen> {
     if (result == null || result.isEmpty || !mounted) return;
 
     try {
-      await supabase.auth.resetPasswordForEmail(result);
+      await supabase.auth.resetPasswordForEmail(
+        result,
+        redirectTo: 'https://www.evlumba.com/sifre-yenile',
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Şifre sıfırlama bağlantısı gönderildi. E-postanı kontrol et.')),
