@@ -190,15 +190,38 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _fetchDesigners() async {
     try {
+      // Only fetch profiles that have an avatar photo
       final data = await supabase
           .from('profiles')
           .select('id, full_name, business_name, avatar_url, specialty, city, cover_photo_url, tags, starting_from')
           .eq('role', 'designer')
-          .limit(10);
+          .not('avatar_url', 'is', null)
+          .neq('avatar_url', '')
+          .limit(80);
 
-      final all = (data as List).map((e) => Profile.fromJson(e as Map<String, dynamic>)).toList();
-      all.shuffle();
-      if (mounted) setState(() { _designers = all.take(6).toList(); _loadingDesigners = false; });
+      final profiles = (data as List).map((e) => Profile.fromJson(e as Map<String, dynamic>)).toList();
+      if (profiles.isEmpty) {
+        if (mounted) setState(() => _loadingDesigners = false);
+        return;
+      }
+
+      // Fetch published project counts for these designers
+      final ids = profiles.map((p) => p.id).toList();
+      final projectData = await supabase
+          .from('designer_projects')
+          .select('designer_id')
+          .inFilter('designer_id', ids)
+          .eq('is_published', true);
+
+      final designerIdsWithProjects = (projectData as List)
+          .map((e) => e['designer_id'] as String)
+          .toSet();
+
+      // Keep only designers with ≥1 project
+      final qualified = profiles.where((p) => designerIdsWithProjects.contains(p.id)).toList();
+      qualified.shuffle();
+
+      if (mounted) setState(() { _designers = qualified.take(6).toList(); _loadingDesigners = false; });
     } catch (e) {
       if (mounted) setState(() => _loadingDesigners = false);
     }
