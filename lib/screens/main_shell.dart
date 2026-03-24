@@ -51,11 +51,20 @@ class MainShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: navigationShell,
-      bottomNavigationBar: _BottomBar(
-        currentVisualIndex: _visualIndex,
-        onTap: (i) => _onTap(context, i),
+    final isOnHome = navigationShell.currentIndex == 0;
+    return PopScope(
+      canPop: isOnHome,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) {
+          navigationShell.goBranch(0, initialLocation: false);
+        }
+      },
+      child: Scaffold(
+        body: navigationShell,
+        bottomNavigationBar: _BottomBar(
+          currentVisualIndex: _visualIndex,
+          onTap: (i) => _onTap(context, i),
+        ),
       ),
     );
   }
