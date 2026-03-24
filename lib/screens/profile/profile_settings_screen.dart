@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/supabase_client.dart';
@@ -166,8 +168,20 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   Future<void> _upgradeToProfessional() async {
     setState(() { _upgradeLoading = true; _message = null; });
     try {
-      final res = await supabase.functions.invoke('upgrade-role', body: {});
-      if (res.status == 200) {
+      final session = supabase.auth.currentSession;
+      if (session == null) {
+        setState(() => _message = 'Oturum bulunamadı.');
+        return;
+      }
+      final res = await http.post(
+        Uri.parse('https://evlumba.com/api/profile/upgrade-role'),
+        headers: {
+          'Authorization': 'Bearer ${session.accessToken}',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({}),
+      );
+      if (res.statusCode == 200) {
         setState(() { _role = 'designer'; _message = 'Profesyonel hesap aktif edildi ✓'; });
       } else {
         setState(() => _message = 'Hesap güncellenemedi.');
