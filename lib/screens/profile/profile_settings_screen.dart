@@ -174,7 +174,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         return;
       }
       final res = await http.post(
-        Uri.parse('https://evlumba.com/api/profile/upgrade-role'),
+        Uri.parse('https://www.evlumba.com/api/profile/upgrade-role'),
         headers: {
           'Authorization': 'Bearer ${session.accessToken}',
           'Content-Type': 'application/json',
@@ -184,7 +184,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       if (res.statusCode == 200) {
         setState(() { _role = 'designer'; _message = 'Profesyonel hesap aktif edildi ✓'; });
       } else {
-        setState(() => _message = 'Hesap güncellenemedi.');
+        setState(() => _message = 'Hesap güncellenemedi. (${res.statusCode}: ${res.body})');
       }
     } catch (e) {
       if (mounted) setState(() => _message = 'Hata: $e');
@@ -290,7 +290,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
           child: const Row(children: [
             Icon(Icons.check_circle_rounded, color: _kPrimary, size: 24),
             SizedBox(width: 12),
-            Expanded(child: Text('Hesabın zaten profesyonel!', style: TextStyle(fontWeight: FontWeight.w600, color: _kPrimary))),
+            Expanded(child: Text('Hesabında profesyonel modülü aktif!', style: TextStyle(fontWeight: FontWeight.w600, color: _kPrimary))),
           ]),
         ),
       ];
