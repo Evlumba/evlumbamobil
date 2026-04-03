@@ -62,7 +62,7 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       await supabase.auth.resetPasswordForEmail(
         result,
-        redirectTo: 'https://www.evlumba.com/sifre-yenile',
+        redirectTo: 'https://www.evlumba.com/auth/callback?type=recovery&next=/sifre-yenile',
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

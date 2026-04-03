@@ -1,6 +1,8 @@
 import '../../widgets/smart_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/supabase_client.dart';
@@ -30,6 +32,13 @@ class _DesignerProfileScreenState extends State<DesignerProfileScreen>
   bool _loading = true;
   String? _error;
   late TabController _tabController;
+
+  // Koleksiyon / beğen state
+  bool _isSaved = false;
+  List<Map<String, dynamic>> _collections = [];
+  Set<String> _savedInCollectionIds = {};
+
+  static const _proHavuzuName = 'Profesyonel Havuzum';
 
   @override
   void initState() {
@@ -143,12 +152,169 @@ class _DesignerProfileScreenState extends State<DesignerProfileScreen>
         _avgRating = avgRating;
         _loading = false;
       });
+      _loadCollections();
     } catch (e) {
       setState(() {
         _error = 'Profil yüklenirken hata oluştu.';
         _loading = false;
       });
     }
+  }
+
+  Future<void> _loadCollections() async {
+    final uid = supabase.auth.currentUser?.id;
+    if (uid == null) return;
+    try {
+      final rows = await supabase
+          .from('collections')
+          .select('id, title, collection_items(design_id)')
+          .order('created_at', ascending: true);
+      final list = List<Map<String, dynamic>>.from(rows as List);
+      final savedIds = <String>{};
+      for (final col in list) {
+        final items = col['collection_items'] as List? ?? [];
+        if (items.any((i) => i['design_id'] == widget.designerId)) {
+          savedIds.add(col['id'] as String);
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _collections = list;
+          _savedInCollectionIds = savedIds;
+          _isSaved = savedIds.isNotEmpty;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _showSaveSheet() async {
+    final uid = supabase.auth.currentUser?.id;
+    if (uid == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Kaydetmek için giriş yapmalısın'), behavior: SnackBarBehavior.floating),
+      );
+      return;
+    }
+    await _loadCollections();
+    if (!mounted) return;
+
+    // Filtre: sadece genel koleksiyonlar + "Profesyonel Havuzum"
+    final designerCols = _collections
+        .where((c) => (c['title'] as String?) == _proHavuzuName || true)
+        .toList();
+
+    if (designerCols.isEmpty) {
+      await _toggleSaveInCollection(null, _proHavuzuName);
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      isScrollControlled: true,
+      builder: (_) => _CollectionPickerSheet(
+        collections: designerCols,
+        savedInIds: _savedInCollectionIds,
+        defaultCollectionName: _proHavuzuName,
+        onToggle: (colId, colName) async {
+          await _toggleSaveInCollection(colId, colName);
+          if (mounted) Navigator.pop(context);
+        },
+        onCreateNew: (name) async {
+          await _toggleSaveInCollection(null, name);
+          if (mounted) Navigator.pop(context);
+        },
+      ),
+    );
+  }
+
+  Future<void> _toggleSaveInCollection(String? existingColId, String colName) async {
+    final uid = supabase.auth.currentUser?.id;
+    if (uid == null) return;
+    try {
+      String colId;
+      if (existingColId != null) {
+        colId = existingColId;
+        if (_savedInCollectionIds.contains(colId)) {
+          final existing = await supabase
+              .from('collection_items')
+              .select('id')
+              .eq('collection_id', colId)
+              .eq('design_id', widget.designerId)
+              .maybeSingle();
+          if (existing != null) {
+            await supabase.from('collection_items').delete().eq('id', existing['id']);
+          }
+          if (mounted) {
+            setState(() {
+              _savedInCollectionIds.remove(colId);
+              _isSaved = _savedInCollectionIds.isNotEmpty;
+            });
+          }
+          _showSnack('Koleksiyondan çıkarıldı');
+          return;
+        }
+      } else {
+        final created = await supabase
+            .from('collections')
+            .insert({'user_id': uid, 'title': colName, 'is_public': false})
+            .select('id')
+            .single();
+        colId = created['id'] as String;
+      }
+      await supabase.from('collection_items').insert({
+        'collection_id': colId,
+        'design_id': widget.designerId,
+      });
+      await _loadCollections();
+      _showSnack('"$colName" koleksiyonuna eklendi ✓');
+    } catch (_) {
+      _showSnack('Bir hata oluştu');
+    }
+  }
+
+  void _showShareSheet() {
+    final profile = _profile;
+    if (profile == null) return;
+    final link = 'https://www.evlumba.com/tasarimcilar/supa_${widget.designerId}';
+    final text = '${profile.displayName} - Evlumba\'da bu tasarımcıya bak!\n$link';
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _ShareSheet(
+        onWhatsApp: () async {
+          Navigator.pop(context);
+          final encoded = Uri.encodeComponent(text);
+          final uri = Uri.parse('https://wa.me/?text=$encoded');
+          if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
+        },
+        onInstagram: () async {
+          Navigator.pop(context);
+          await Share.share(text);
+        },
+        onCopyLink: () {
+          Navigator.pop(context);
+          Clipboard.setData(ClipboardData(text: link));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Link kopyalandı'), behavior: SnackBarBehavior.floating, duration: Duration(seconds: 2)),
+          );
+        },
+      ),
+    );
+  }
+
+  void _showSnack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating, duration: const Duration(seconds: 2)),
+    );
   }
 
   Future<void> _startConversation() async {
@@ -246,6 +412,20 @@ class _DesignerProfileScreenState extends State<DesignerProfileScreen>
           SliverAppBar(
             expandedHeight: 220,
             pinned: true,
+            actions: [
+              IconButton(
+                icon: Icon(
+                  _isSaved ? Icons.favorite : Icons.favorite_border,
+                  color: _isSaved ? Colors.red : Colors.white,
+                ),
+                onPressed: _showSaveSheet,
+              ),
+              IconButton(
+                icon: const Icon(Icons.share_outlined, color: Colors.white),
+                onPressed: _showShareSheet,
+              ),
+              const SizedBox(width: 4),
+            ],
             flexibleSpace: FlexibleSpaceBar(
               background: profile.coverPhotoUrl != null &&
                       profile.coverPhotoUrl!.isNotEmpty
@@ -645,4 +825,179 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   bool shouldRebuild(_TabBarDelegate oldDelegate) => false;
+}
+
+// ── Collection picker sheet ───────────────────────────────────────────────────
+
+class _CollectionPickerSheet extends StatefulWidget {
+  final List<Map<String, dynamic>> collections;
+  final Set<String> savedInIds;
+  final String defaultCollectionName;
+  final void Function(String colId, String colName) onToggle;
+  final void Function(String name) onCreateNew;
+
+  const _CollectionPickerSheet({
+    required this.collections,
+    required this.savedInIds,
+    required this.defaultCollectionName,
+    required this.onToggle,
+    required this.onCreateNew,
+  });
+
+  @override
+  State<_CollectionPickerSheet> createState() => _CollectionPickerSheetState();
+}
+
+class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
+  final _controller = TextEditingController();
+  bool _showNew = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 24, right: 24, top: 20,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)),
+            ),
+            const SizedBox(height: 20),
+            const Text('Profesyonel Havuzuna Ekle',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+            const SizedBox(height: 16),
+            ...widget.collections.map((col) {
+              final id = col['id'] as String;
+              final title = col['title'] as String? ?? 'Koleksiyon';
+              final isSaved = widget.savedInIds.contains(id);
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(title, style: const TextStyle(fontSize: 15, color: AppColors.textPrimary)),
+                trailing: isSaved
+                    ? const Icon(Icons.check_circle, color: AppColors.primary, size: 22)
+                    : const Icon(Icons.radio_button_unchecked, color: AppColors.border, size: 22),
+                onTap: () => widget.onToggle(id, title),
+              );
+            }),
+            const Divider(),
+            if (_showNew) ...[
+              TextField(
+                controller: _controller,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'Koleksiyon adı…',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                ),
+                onSubmitted: (v) { if (v.trim().isNotEmpty) widget.onCreateNew(v.trim()); },
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    if (_controller.text.trim().isNotEmpty) widget.onCreateNew(_controller.text.trim());
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  child: const Text('Oluştur ve Ekle', style: TextStyle(fontWeight: FontWeight.w600)),
+                ),
+              ),
+            ] else
+              TextButton.icon(
+                onPressed: () => setState(() => _showNew = true),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Yeni Koleksiyon Oluştur'),
+                style: TextButton.styleFrom(foregroundColor: AppColors.primary),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Share sheet ───────────────────────────────────────────────────────────────
+
+class _ShareSheet extends StatelessWidget {
+  final VoidCallback onWhatsApp;
+  final VoidCallback onInstagram;
+  final VoidCallback onCopyLink;
+
+  const _ShareSheet({
+    required this.onWhatsApp,
+    required this.onInstagram,
+    required this.onCopyLink,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 20),
+            const Text('Paylaş', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _ShareOption(icon: Icons.chat_rounded, color: const Color(0xFF25D366), label: 'WhatsApp', onTap: onWhatsApp),
+                _ShareOption(icon: Icons.camera_alt_rounded, color: const Color(0xFFE1306C), label: 'Instagram', onTap: onInstagram),
+                _ShareOption(icon: Icons.link_rounded, color: AppColors.primary, label: 'Link Kopyala', onTap: onCopyLink),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ShareOption extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String label;
+  final VoidCallback onTap;
+
+  const _ShareOption({required this.icon, required this.color, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 64, height: 64,
+            decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
+            child: Icon(icon, color: color, size: 28),
+          ),
+          const SizedBox(height: 8),
+          Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textPrimary, fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
+  }
 }
