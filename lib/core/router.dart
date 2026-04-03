@@ -20,6 +20,7 @@ import '../screens/designer_panel/projects_screen.dart';
 import '../screens/designer_panel/project_form_screen.dart';
 import '../screens/web/web_screen.dart';
 import '../screens/profile/profile_settings_screen.dart';
+import '../screens/profile/collections_screen.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final _shellNavigatorKey = GlobalKey<NavigatorState>();
@@ -66,6 +67,12 @@ GoRouter buildRouter() {
           final tab = (state.extra as String?) ?? 'general';
           return ProfileSettingsScreen(tab: tab);
         },
+      ),
+      // Collections
+      GoRoute(
+        path: '/collections',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (_, __) => const CollectionsScreen(),
       ),
       // Admin panel
       GoRoute(

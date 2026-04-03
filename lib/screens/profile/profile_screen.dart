@@ -259,6 +259,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: Column(
                   children: [
                     _MenuItem(
+                      icon: Icons.bookmark_outline,
+                      title: 'Koleksiyonlarım',
+                      subtitle: 'Kaydettiklerim & Profesyonel Havuzum',
+                      onTap: () => context.push('/collections'),
+                    ),
+                    const Divider(height: 1, indent: 56),
+                    _MenuItem(
                       icon: Icons.chat_bubble_outline,
                       title: 'Mesajlarım',
                       onTap: () => context.go('/messages'),
