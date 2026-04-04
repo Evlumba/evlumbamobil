@@ -277,6 +277,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       subtitle: 'Sık sorulan sorular',
                       onTap: () => context.push('/sss'),
                     ),
+                    const Divider(height: 1, indent: 56),
+                    _MenuItem(
+                      icon: Icons.privacy_tip_outlined,
+                      title: 'Gizlilik Politikası',
+                      onTap: () => context.push('/gizlilik-politikasi'),
+                    ),
+                    const Divider(height: 1, indent: 56),
+                    _MenuItem(
+                      icon: Icons.description_outlined,
+                      title: 'Kullanım Koşulları',
+                      onTap: () => context.push('/kullanim-kosullari'),
+                    ),
                   ],
                 ),
               ),
@@ -294,7 +306,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
 
               const SizedBox(height: 32),
-              const Text('Evlumba v1.0.3', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+              const Text('Evlumba v1.0.12', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
               const SizedBox(height: 24),
             ],
           ),

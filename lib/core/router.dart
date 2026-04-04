@@ -39,6 +39,7 @@ GoRouter buildRouter() {
         '/splash', '/login', '/register',
         '/home', '/explore', '/designers-list',
         '/forum', '/blog', '/ilanlar', '/forum-tab', '/sss',
+        '/gizlilik-politikasi', '/kullanim-kosullari',
       ];
       final isPublic = publicPrefixes.any((p) => location.startsWith(p));
 
@@ -85,6 +86,18 @@ GoRouter buildRouter() {
         path: '/sss',
         parentNavigatorKey: _rootNavigatorKey,
         builder: (_, __) => const WebScreen(url: 'https://www.evlumba.com/sss', title: 'Yardım'),
+      ),
+      // Gizlilik Politikası
+      GoRoute(
+        path: '/gizlilik-politikasi',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (_, __) => const WebScreen(url: 'https://www.evlumba.com/gizlilik-politikasi', title: 'Gizlilik Politikası'),
+      ),
+      // Kullanım Koşulları
+      GoRoute(
+        path: '/kullanim-kosullari',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (_, __) => const WebScreen(url: 'https://www.evlumba.com/kullanim-kosullari', title: 'Kullanım Koşulları'),
       ),
       // Web screens (Forum, Blog, İlanlar)
       GoRoute(
