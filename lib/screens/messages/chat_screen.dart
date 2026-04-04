@@ -87,12 +87,9 @@ class _ChatScreenState extends State<ChatScreen> {
     final currentUser = supabase.auth.currentUser;
     if (currentUser == null) return;
     try {
-      await supabase
-          .from('messages')
-          .update({'read_at': DateTime.now().toIso8601String()})
-          .eq('conversation_id', widget.conversationId)
-          .neq('sender_id', currentUser.id)
-          .isFilter('read_at', null);
+      await supabase.rpc('mark_conversation_read', params: {
+        'conversation_uuid': widget.conversationId,
+      });
     } catch (_) {}
   }
 

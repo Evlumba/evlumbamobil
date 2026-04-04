@@ -310,12 +310,15 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
                                 return _ConversationCard(
                                   conv: conv,
                                   timeLabel: _formatTime(conv.lastMessageAt ?? conv.createdAt),
-                                  onTap: () => context.push(
-                                    '/chat/${conv.id}'
-                                    '?name=${Uri.encodeComponent(conv.otherPartyName ?? 'Kullanıcı')}'
-                                    '&avatar=${Uri.encodeComponent(conv.otherPartyAvatarUrl ?? '')}'
-                                    '&userId=${Uri.encodeComponent(conv.designerId)}',
-                                  ),
+                                  onTap: () async {
+                                    await context.push(
+                                      '/chat/${conv.id}'
+                                      '?name=${Uri.encodeComponent(conv.otherPartyName ?? 'Kullanıcı')}'
+                                      '&avatar=${Uri.encodeComponent(conv.otherPartyAvatarUrl ?? '')}'
+                                      '&userId=${Uri.encodeComponent(conv.designerId)}',
+                                    );
+                                    _fetchConversations();
+                                  },
                                 );
                               },
                             ),
