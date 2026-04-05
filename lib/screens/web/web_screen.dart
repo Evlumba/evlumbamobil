@@ -54,7 +54,13 @@ class _WebScreenState extends State<WebScreen> {
         title: Text(widget.title),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go('/home'),
+          onPressed: () {
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            } else {
+              context.go('/home');
+            }
+          },
         ),
       ),
       body: Stack(
@@ -79,7 +85,7 @@ class _WebScreenState extends State<WebScreen> {
               case 2:
                 context.go('/designers-list');
               case 3:
-                context.go('/forum-tab');
+                context.go('/forum');
               case 4:
                 context.go('/ilanlar-tab');
             }

@@ -193,7 +193,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: GestureDetector(
-              onTap: () => context.go('/profile'),
+              onTap: () => context.push('/profile'),
               child: const CircleAvatar(
                 radius: 16,
                 backgroundColor: AppColors.border,

@@ -359,10 +359,10 @@ class _HomeScreenState extends State<HomeScreen> {
           const Spacer(),
           _AppBarIcon(icon: Icons.notifications_none_rounded, onTap: () {}),
           const SizedBox(width: 6),
-          _AppBarIcon(icon: Icons.chat_bubble_outline_rounded, onTap: () => context.go('/messages')),
+          _AppBarIcon(icon: Icons.chat_bubble_outline_rounded, onTap: () => context.push('/messages')),
           const SizedBox(width: 6),
           GestureDetector(
-            onTap: () => _isLoggedIn ? context.go('/profile') : context.go('/login'),
+            onTap: () => _isLoggedIn ? context.push('/profile') : context.push('/login'),
             child: Container(
               width: 34, height: 34,
               decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.border, width: 1.5), color: AppColors.background),
@@ -380,7 +380,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
       child: GestureDetector(
-        onTap: () => context.go('/explore'),
+        onTap: () => context.push('/explore'),
         child: Container(
           height: 48,
           decoration: BoxDecoration(
@@ -415,12 +415,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildQuickActions() {
     final items = [
-      (Icons.forum_outlined, 'Forum', () => context.go('/forum')),
+      (Icons.forum_outlined, 'Forum', () => context.push('/forum')),
       (Icons.auto_awesome_outlined, 'AI Tasarla', () {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Çok yakında!'), duration: Duration(seconds: 1)));
       }),
-      (Icons.article_outlined, 'Blog', () => context.go('/blog')),
-      (Icons.work_outline_rounded, 'İlanlar', () => context.go('/ilanlar')),
+      (Icons.article_outlined, 'Blog', () => context.push('/blog')),
+      (Icons.work_outline_rounded, 'İlanlar', () => context.push('/ilanlar')),
     ];
 
     return Padding(
@@ -468,7 +468,7 @@ class _HomeScreenState extends State<HomeScreen> {
             const Text('✦', style: TextStyle(fontSize: 12, color: Color(0xFF0E5A3A))),
             const Spacer(),
             GestureDetector(
-              onTap: () => context.go('/explore'),
+              onTap: () => context.push('/explore'),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(color: const Color(0xFF0E5A3A), borderRadius: BorderRadius.circular(20)),
@@ -592,7 +592,7 @@ class _HomeScreenState extends State<HomeScreen> {
             const Text('İlanlar', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
             const Spacer(),
             GestureDetector(
-              onTap: () => context.go('/ilanlar'),
+              onTap: () => context.push('/ilanlar'),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(color: const Color(0xFF0E5A3A), borderRadius: BorderRadius.circular(20)),
@@ -618,7 +618,7 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
               children: _listings.map((l) => GestureDetector(
-                onTap: () => context.go('/ilanlar'),
+                onTap: () => context.push('/ilanlar'),
                 child: Container(
                   margin: const EdgeInsets.only(bottom: 10),
                   padding: const EdgeInsets.all(14),
@@ -680,7 +680,7 @@ class _HomeScreenState extends State<HomeScreen> {
             const Text('Blog', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
             const Spacer(),
             GestureDetector(
-              onTap: () => context.go('/blog'),
+              onTap: () => context.push('/blog'),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(color: const Color(0xFF0E5A3A), borderRadius: BorderRadius.circular(20)),
@@ -718,7 +718,7 @@ class _HomeScreenState extends State<HomeScreen> {
               itemBuilder: (context, i) {
                 final b = _blogs[i];
                 return GestureDetector(
-                  onTap: () => context.go('/blog'),
+                  onTap: () => context.push('/blog/${b.slug}'),
                   child: SizedBox(
                     width: 240,
                     child: Container(
@@ -784,7 +784,7 @@ class _HomeScreenState extends State<HomeScreen> {
             const Text('Forum', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
             const Spacer(),
             GestureDetector(
-              onTap: () => context.go('/forum'),
+              onTap: () => context.push('/forum'),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(color: const Color(0xFF0E5A3A), borderRadius: BorderRadius.circular(20)),
@@ -810,7 +810,7 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
               children: _forums.map((f) => GestureDetector(
-                onTap: () => context.go('/forum'),
+                onTap: () => context.push('/forum/${f.id}'),
                 child: Container(
                   margin: const EdgeInsets.only(bottom: 10),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -852,11 +852,11 @@ class _HomeScreenState extends State<HomeScreen> {
       Container(height: 1, color: AppColors.border),
       const SizedBox(height: 16),
       Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        GestureDetector(onTap: () {}, child: const Text('SSS', style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500))),
+        GestureDetector(onTap: () => context.push('/sss'), child: const Text('SSS', style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500))),
         const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('·', style: TextStyle(color: AppColors.textSecondary))),
-        GestureDetector(onTap: () {}, child: const Text('İletişim', style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500))),
+        GestureDetector(onTap: () => context.push('/iletisim'), child: const Text('İletişim', style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500))),
         const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('·', style: TextStyle(color: AppColors.textSecondary))),
-        GestureDetector(onTap: () {}, child: const Text('Gizlilik', style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500))),
+        GestureDetector(onTap: () => context.push('/gizlilik-politikasi'), child: const Text('Gizlilik', style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500))),
       ]),
       const SizedBox(height: 10),
       const Text('© 2025 Evlumba', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),

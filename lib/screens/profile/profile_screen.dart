@@ -268,7 +268,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _MenuItem(
                       icon: Icons.chat_bubble_outline,
                       title: 'Mesajlarım',
-                      onTap: () => context.go('/messages'),
+                      onTap: () => context.push('/messages'),
                     ),
                     const Divider(height: 1, indent: 56),
                     _MenuItem(

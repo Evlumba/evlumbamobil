@@ -19,6 +19,13 @@ import '../screens/designer_panel/edit_profile_screen.dart';
 import '../screens/designer_panel/projects_screen.dart';
 import '../screens/designer_panel/project_form_screen.dart';
 import '../screens/web/web_screen.dart';
+import '../screens/blog/blog_screen.dart';
+import '../screens/blog/blog_detail_screen.dart';
+import '../screens/info/sss_screen.dart';
+import '../screens/info/privacy_screen.dart';
+import '../screens/info/contact_screen.dart';
+import '../screens/forum/forum_screen.dart';
+import '../screens/forum/topic_detail_screen.dart';
 import '../screens/profile/profile_settings_screen.dart';
 import '../screens/profile/collections_screen.dart';
 
@@ -39,7 +46,7 @@ GoRouter buildRouter() {
         '/splash', '/login', '/register',
         '/home', '/explore', '/designers-list',
         '/forum', '/blog', '/ilanlar', '/forum-tab', '/sss',
-        '/gizlilik-politikasi', '/kullanim-kosullari',
+        '/gizlilik-politikasi', '/kullanim-kosullari', '/iletisim',
       ];
       final isPublic = publicPrefixes.any((p) => location.startsWith(p));
 
@@ -81,34 +88,51 @@ GoRouter buildRouter() {
         parentNavigatorKey: _rootNavigatorKey,
         builder: (_, __) => const WebScreen(url: 'https://www.evlumba.com/admin', title: 'Admin Panel'),
       ),
-      // SSS
+      // SSS (native)
       GoRoute(
         path: '/sss',
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (_, __) => const WebScreen(url: 'https://www.evlumba.com/sss', title: 'Yardım'),
+        builder: (_, __) => const SssScreen(),
       ),
-      // Gizlilik Politikası
+      // Gizlilik Politikası (native)
       GoRoute(
         path: '/gizlilik-politikasi',
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (_, __) => const WebScreen(url: 'https://www.evlumba.com/gizlilik-politikasi', title: 'Gizlilik Politikası'),
+        builder: (_, __) => const PrivacyScreen(),
       ),
-      // Kullanım Koşulları
+      // Kullanım Koşulları (native - gizlilik ile aynı içerik şimdilik)
       GoRoute(
         path: '/kullanim-kosullari',
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (_, __) => const WebScreen(url: 'https://www.evlumba.com/kullanim-kosullari', title: 'Kullanım Koşulları'),
+        builder: (_, __) => const PrivacyScreen(),
       ),
-      // Web screens (Forum, Blog, İlanlar)
+      // İletişim (native)
+      GoRoute(
+        path: '/iletisim',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (_, __) => const ContactScreen(),
+      ),
+      // Forum (native)
       GoRoute(
         path: '/forum',
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (_, __) => const WebScreen(url: 'https://www.evlumba.com/forum', title: 'Forum'),
+        builder: (_, __) => const ForumScreen(),
       ),
+      GoRoute(
+        path: '/forum/:topicId',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => TopicDetailScreen(topicId: state.pathParameters['topicId']!),
+      ),
+      // Blog (native)
       GoRoute(
         path: '/blog',
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (_, __) => const WebScreen(url: 'https://www.evlumba.com/blog', title: 'Blog'),
+        builder: (_, __) => const BlogScreen(),
+      ),
+      GoRoute(
+        path: '/blog/:slug',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => BlogDetailScreen(slug: state.pathParameters['slug']!),
       ),
       GoRoute(
         path: '/ilanlar',
