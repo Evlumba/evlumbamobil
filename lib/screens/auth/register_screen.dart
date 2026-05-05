@@ -241,11 +241,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ],
               ),
               const SizedBox(height: 24),
-              TermsAgreement(
-                value: _termsAccepted,
-                onChanged: (value) => setState(() => _termsAccepted = value),
-              ),
-              const SizedBox(height: 16),
 
               // Google Sign-Up
               SizedBox(
@@ -292,6 +287,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             : 'Apple ile kayıt ol',
                   ),
                 ),
+              ),
+              const SizedBox(height: 12),
+              TermsAgreement(
+                value: _termsAccepted,
+                onChanged: (value) => setState(() => _termsAccepted = value),
               ),
               const SizedBox(height: 16),
               Row(

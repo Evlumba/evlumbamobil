@@ -41,8 +41,7 @@ class TermsAgreement extends StatelessWidget {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
-                      'Kullanım Koşulları ve Topluluk Kuralları’nı kabul ediyorum. '
-                      'Sakıncalı içerik, taciz, nefret söylemi ve kötüye kullanıma sıfır tolerans uygulanır. ',
+                      'Kullanım Koşulları ve Topluluk Kuralları’nı kabul ediyorum. ',
                       style: style,
                     ),
                     GestureDetector(

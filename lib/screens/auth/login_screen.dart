@@ -237,12 +237,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       color: AppColors.textSecondary,
                     ),
               ),
-              const SizedBox(height: 20),
-              TermsAgreement(
-                value: _termsAccepted,
-                onChanged: (value) => setState(() => _termsAccepted = value),
-              ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 32),
 
               // Google Sign-In
               SizedBox(
@@ -286,7 +281,12 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 12),
+              TermsAgreement(
+                value: _termsAccepted,
+                onChanged: (value) => setState(() => _termsAccepted = value),
+              ),
+              const SizedBox(height: 16),
               Row(
                 children: [
                   const Expanded(child: Divider()),
