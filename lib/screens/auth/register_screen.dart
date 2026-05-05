@@ -20,6 +20,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _scrollController = ScrollController();
   final _formKey = GlobalKey<FormState>();
   String _role = 'homeowner';
   bool _loading = false;
@@ -34,6 +35,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -169,7 +171,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (_termsAccepted) return true;
     setState(() {
       _errorMessage =
-          'Devam etmek için Kullanım Koşulları ve Topluluk Kuralları onayı zorunlu.';
+          'Kayıt olmak için Kullanım Koşulları ve Topluluk Kuralları onayını işaretlemelisin.';
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
     });
     return false;
   }
@@ -195,6 +205,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: SingleChildScrollView(
+          controller: _scrollController,
           padding: const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -288,11 +299,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
-              TermsAgreement(
-                value: _termsAccepted,
-                onChanged: (value) => setState(() => _termsAccepted = value),
-              ),
               const SizedBox(height: 16),
               Row(
                 children: [
@@ -373,7 +379,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         return null;
                       },
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 18),
+                    TermsAgreement(
+                      value: _termsAccepted,
+                      onChanged: (value) => setState(() {
+                        _termsAccepted = value;
+                        if (value &&
+                            _errorMessage?.contains('Kullanım Koşulları') ==
+                                true) {
+                          _errorMessage = null;
+                        }
+                      }),
+                    ),
                     if (_errorMessage != null) ...[
                       const SizedBox(height: 8),
                       Container(

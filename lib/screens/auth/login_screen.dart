@@ -4,8 +4,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/supabase_client.dart';
 import '../../core/theme.dart';
-import '../../services/moderation_service.dart';
-import '../../widgets/terms_agreement.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -22,7 +20,6 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _googleLoading = false;
   bool _appleLoading = false;
   bool _obscurePassword = true;
-  bool _termsAccepted = false;
   String? _errorMessage;
 
   @override
@@ -91,7 +88,6 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _signIn() async {
-    if (!_requireTerms()) return;
     if (!_formKey.currentState!.validate()) return;
     setState(() {
       _loading = true;
@@ -103,7 +99,6 @@ class _LoginScreenState extends State<LoginScreen> {
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
-      await ModerationService.acceptTerms(surface: 'login_password');
       if (mounted) {
         context.go('/home');
       }
@@ -123,7 +118,6 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _signInWithGoogle() async {
-    if (!_requireTerms()) return;
     // Google Sign-In requires platform-specific setup:
     // Android: Add google-services.json and configure SHA-1 in Firebase/Supabase
     // iOS: Add GoogleService-Info.plist and configure URL schemes in Info.plist
@@ -152,7 +146,6 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _signInWithApple() async {
-    if (!_requireTerms()) return;
     setState(() {
       _appleLoading = true;
       _errorMessage = null;
@@ -175,15 +168,6 @@ class _LoginScreenState extends State<LoginScreen> {
         setState(() => _appleLoading = false);
       }
     }
-  }
-
-  bool _requireTerms() {
-    if (_termsAccepted) return true;
-    setState(() {
-      _errorMessage =
-          'Devam etmek için Kullanım Koşulları ve Topluluk Kuralları onayı zorunlu.';
-    });
-    return false;
   }
 
   String _localizeAuthError(String message) {
@@ -281,11 +265,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
-              TermsAgreement(
-                value: _termsAccepted,
-                onChanged: (value) => setState(() => _termsAccepted = value),
-              ),
               const SizedBox(height: 16),
               Row(
                 children: [
@@ -353,13 +332,24 @@ class _LoginScreenState extends State<LoginScreen> {
                         return null;
                       },
                     ),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: _forgotPassword,
-                        child: const Text('Şifremi Unuttum',
-                            style: TextStyle(fontSize: 13)),
-                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        TextButton(
+                          onPressed: () => context.go('/register'),
+                          child: const Text(
+                            'Hesap Oluştur',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: _forgotPassword,
+                          child: const Text(
+                            'Şifremi Unuttum',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ],
                     ),
                     if (_errorMessage != null)
                       Container(
@@ -401,23 +391,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
               const SizedBox(height: 24),
-              Center(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      'Hesabın yok mu? ',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: AppColors.textSecondary,
-                          ),
-                    ),
-                    TextButton(
-                      onPressed: () => context.go('/register'),
-                      child: const Text('Kayıt Ol'),
-                    ),
-                  ],
-                ),
-              ),
             ],
           ),
         ),
