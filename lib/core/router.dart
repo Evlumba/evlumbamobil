@@ -23,6 +23,7 @@ import '../screens/blog/blog_screen.dart';
 import '../screens/blog/blog_detail_screen.dart';
 import '../screens/info/sss_screen.dart';
 import '../screens/info/privacy_screen.dart';
+import '../screens/info/terms_screen.dart';
 import '../screens/info/contact_screen.dart';
 import '../screens/forum/forum_screen.dart';
 import '../screens/forum/topic_detail_screen.dart';
@@ -43,24 +44,38 @@ GoRouter buildRouter() {
 
       // Public pages — no login required
       const publicPrefixes = [
-        '/splash', '/login', '/register',
-        '/home', '/explore', '/designers-list',
-        '/forum', '/blog', '/ilanlar', '/forum-tab', '/sss',
-        '/gizlilik-politikasi', '/kullanim-kosullari', '/iletisim',
+        '/splash',
+        '/login',
+        '/register',
+        '/home',
+        '/explore',
+        '/designers-list',
+        '/forum',
+        '/blog',
+        '/ilanlar',
+        '/forum-tab',
+        '/sss',
+        '/gizlilik-politikasi',
+        '/kullanim-kosullari',
+        '/iletisim',
       ];
       final isPublic = publicPrefixes.any((p) => location.startsWith(p));
 
       if (location == '/') return '/home';
-      if (isLoggedIn && (location.startsWith('/login') || location.startsWith('/register'))) {
+      if (isLoggedIn &&
+          (location.startsWith('/login') || location.startsWith('/register'))) {
         return '/home';
       }
       if (!isLoggedIn && !isPublic) return '/login';
       return null;
     },
     routes: [
-      GoRoute(path: '/splash', builder: (context, state) => const SplashScreen()),
+      GoRoute(
+          path: '/splash', builder: (context, state) => const SplashScreen()),
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
-      GoRoute(path: '/register', builder: (context, state) => const RegisterScreen()),
+      GoRoute(
+          path: '/register',
+          builder: (context, state) => const RegisterScreen()),
       // Profile – accessible outside shell via top icon
       GoRoute(
         path: '/profile',
@@ -86,7 +101,8 @@ GoRouter buildRouter() {
       GoRoute(
         path: '/admin',
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (_, __) => const WebScreen(url: 'https://www.evlumba.com/admin', title: 'Admin Panel'),
+        builder: (_, __) => const WebScreen(
+            url: 'https://www.evlumba.com/admin', title: 'Admin Panel'),
       ),
       // SSS (native)
       GoRoute(
@@ -100,11 +116,11 @@ GoRouter buildRouter() {
         parentNavigatorKey: _rootNavigatorKey,
         builder: (_, __) => const PrivacyScreen(),
       ),
-      // Kullanım Koşulları (native - gizlilik ile aynı içerik şimdilik)
+      // Kullanım Koşulları (native)
       GoRoute(
         path: '/kullanim-kosullari',
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (_, __) => const PrivacyScreen(),
+        builder: (_, __) => const TermsScreen(),
       ),
       // İletişim (native)
       GoRoute(
@@ -121,7 +137,8 @@ GoRouter buildRouter() {
       GoRoute(
         path: '/forum/:topicId',
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (context, state) => TopicDetailScreen(topicId: state.pathParameters['topicId']!),
+        builder: (context, state) =>
+            TopicDetailScreen(topicId: state.pathParameters['topicId']!),
       ),
       // Blog (native)
       GoRoute(
@@ -132,23 +149,27 @@ GoRouter buildRouter() {
       GoRoute(
         path: '/blog/:slug',
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (context, state) => BlogDetailScreen(slug: state.pathParameters['slug']!),
+        builder: (context, state) =>
+            BlogDetailScreen(slug: state.pathParameters['slug']!),
       ),
       GoRoute(
         path: '/ilanlar',
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (_, __) => const WebScreen(url: 'https://www.evlumba.com/ilanlar', title: 'İlanlar'),
+        builder: (_, __) => const WebScreen(
+            url: 'https://www.evlumba.com/ilanlar', title: 'İlanlar'),
       ),
       // Designer profile & project detail
       GoRoute(
         path: '/designers/:id',
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (context, state) => DesignerProfileScreen(designerId: state.pathParameters['id']!),
+        builder: (context, state) =>
+            DesignerProfileScreen(designerId: state.pathParameters['id']!),
       ),
       GoRoute(
         path: '/projects/:id',
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (context, state) => ProjectDetailScreen(projectId: state.pathParameters['id']!),
+        builder: (context, state) =>
+            ProjectDetailScreen(projectId: state.pathParameters['id']!),
       ),
       GoRoute(
         path: '/messages',
@@ -173,35 +194,62 @@ GoRouter buildRouter() {
         ),
       ),
       // Designer panel
-      GoRoute(path: '/panel', parentNavigatorKey: _rootNavigatorKey, builder: (_, __) => const PanelScreen()),
-      GoRoute(path: '/panel/edit-profile', parentNavigatorKey: _rootNavigatorKey, builder: (_, __) => const EditProfileScreen()),
-      GoRoute(path: '/panel/projects', parentNavigatorKey: _rootNavigatorKey, builder: (_, __) => const PanelProjectsScreen()),
-      GoRoute(path: '/panel/projects/new', parentNavigatorKey: _rootNavigatorKey, builder: (_, __) => const ProjectFormScreen()),
+      GoRoute(
+          path: '/panel',
+          parentNavigatorKey: _rootNavigatorKey,
+          builder: (_, __) => const PanelScreen()),
+      GoRoute(
+          path: '/panel/edit-profile',
+          parentNavigatorKey: _rootNavigatorKey,
+          builder: (_, __) => const EditProfileScreen()),
+      GoRoute(
+          path: '/panel/projects',
+          parentNavigatorKey: _rootNavigatorKey,
+          builder: (_, __) => const PanelProjectsScreen()),
+      GoRoute(
+          path: '/panel/projects/new',
+          parentNavigatorKey: _rootNavigatorKey,
+          builder: (_, __) => const ProjectFormScreen()),
       GoRoute(
         path: '/panel/projects/:id/edit',
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (context, state) => ProjectFormScreen(projectId: state.pathParameters['id']!),
+        builder: (context, state) =>
+            ProjectFormScreen(projectId: state.pathParameters['id']!),
       ),
       // Main shell with bottom nav (4 branches: Home, Explore, Messages, Profile)
       StatefulShellRoute.indexedStack(
-        builder: (context, state, navigationShell) => MainShell(navigationShell: navigationShell),
+        builder: (context, state, navigationShell) =>
+            MainShell(navigationShell: navigationShell),
         branches: [
           // 0 - Home
           StatefulShellBranch(
             navigatorKey: _shellNavigatorKey,
-            routes: [GoRoute(path: '/home', builder: (_, __) => const HomeScreen())],
+            routes: [
+              GoRoute(path: '/home', builder: (_, __) => const HomeScreen())
+            ],
           ),
           // 1 - Explore
           StatefulShellBranch(
-            routes: [GoRoute(path: '/explore', builder: (_, __) => const ExploreScreen())],
+            routes: [
+              GoRoute(
+                  path: '/explore', builder: (_, __) => const ExploreScreen())
+            ],
           ),
           // 2 - Messages (visual index 3)
           StatefulShellBranch(
-            routes: [GoRoute(path: '/messages-tab', builder: (_, __) => const ConversationsScreen())],
+            routes: [
+              GoRoute(
+                  path: '/messages-tab',
+                  builder: (_, __) => const ConversationsScreen())
+            ],
           ),
           // 3 - Profile (visual index 4)
           StatefulShellBranch(
-            routes: [GoRoute(path: '/profile-tab', builder: (_, __) => const ProfileScreen())],
+            routes: [
+              GoRoute(
+                  path: '/profile-tab',
+                  builder: (_, __) => const ProfileScreen())
+            ],
           ),
         ],
       ),

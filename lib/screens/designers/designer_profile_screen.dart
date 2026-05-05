@@ -10,7 +10,9 @@ import '../../core/theme.dart';
 import '../../models/designer_project.dart';
 import '../../models/designer_review.dart';
 import '../../models/profile.dart';
+import '../../services/moderation_service.dart';
 import '../../widgets/project_card.dart';
+import '../../widgets/report_block_sheet.dart';
 import '../../widgets/review_card.dart';
 import '../../widgets/star_rating.dart';
 
@@ -60,6 +62,11 @@ class _DesignerProfileScreenState extends State<DesignerProfileScreen>
     });
 
     try {
+      final currentUser = supabase.auth.currentUser;
+      final blockedUserIds = currentUser == null
+          ? <String>{}
+          : await ModerationService.loadBlockedUserIds();
+
       final profileData = await supabase
           .from('profiles')
           .select(
@@ -76,7 +83,7 @@ class _DesignerProfileScreenState extends State<DesignerProfileScreen>
         return;
       }
 
-      final profile = Profile.fromJson(profileData as Map<String, dynamic>);
+      final profile = Profile.fromJson(profileData);
 
       final projectsData = await supabase
           .from('designer_projects')
@@ -99,11 +106,14 @@ class _DesignerProfileScreenState extends State<DesignerProfileScreen>
           .eq('designer_id', widget.designerId)
           .order('created_at', ascending: false);
 
-      final reviewsList =
-          (reviewsData as List).map((e) => DesignerReview.fromJson(e as Map<String, dynamic>)).toList();
+      final reviewsList = (reviewsData as List)
+          .map((e) => DesignerReview.fromJson(e as Map<String, dynamic>))
+          .where((review) => !blockedUserIds.contains(review.homeownerId))
+          .toList();
 
       // Fetch reviewer names
-      final reviewerIds = reviewsList.map((r) => r.homeownerId).toSet().toList();
+      final reviewerIds =
+          reviewsList.map((r) => r.homeownerId).toSet().toList();
       Map<String, String> reviewerNames = {};
       if (reviewerIds.isNotEmpty) {
         final reviewersData = await supabase
@@ -113,9 +123,7 @@ class _DesignerProfileScreenState extends State<DesignerProfileScreen>
         reviewerNames = {
           for (final r in reviewersData as List)
             (r as Map<String, dynamic>)['id'] as String:
-                ((r['full_name'] as String?) ?? 'Kullanıcı')
-                    .split(' ')
-                    .first,
+                ((r['full_name'] as String?) ?? 'Kullanıcı').split(' ').first,
         };
       }
 
@@ -139,9 +147,7 @@ class _DesignerProfileScreenState extends State<DesignerProfileScreen>
       }).toList();
 
       final avgRating = reviewsWithNames.isNotEmpty
-          ? reviewsWithNames
-                  .map((r) => r.rating)
-                  .reduce((a, b) => a + b) /
+          ? reviewsWithNames.map((r) => r.rating).reduce((a, b) => a + b) /
               reviewsWithNames.length
           : 0.0;
 
@@ -191,7 +197,9 @@ class _DesignerProfileScreenState extends State<DesignerProfileScreen>
     final uid = supabase.auth.currentUser?.id;
     if (uid == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Kaydetmek için giriş yapmalısın'), behavior: SnackBarBehavior.floating),
+        const SnackBar(
+            content: Text('Kaydetmek için giriş yapmalısın'),
+            behavior: SnackBarBehavior.floating),
       );
       return;
     }
@@ -231,7 +239,8 @@ class _DesignerProfileScreenState extends State<DesignerProfileScreen>
     );
   }
 
-  Future<void> _toggleSaveInCollection(String? existingColId, String colName) async {
+  Future<void> _toggleSaveInCollection(
+      String? existingColId, String colName) async {
     final uid = supabase.auth.currentUser?.id;
     if (uid == null) return;
     try {
@@ -246,7 +255,10 @@ class _DesignerProfileScreenState extends State<DesignerProfileScreen>
               .eq('design_id', widget.designerId)
               .maybeSingle();
           if (existing != null) {
-            await supabase.from('collection_items').delete().eq('id', existing['id']);
+            await supabase
+                .from('collection_items')
+                .delete()
+                .eq('id', existing['id']);
           }
           if (mounted) {
             setState(() {
@@ -279,8 +291,10 @@ class _DesignerProfileScreenState extends State<DesignerProfileScreen>
   void _showShareSheet() {
     final profile = _profile;
     if (profile == null) return;
-    final link = 'https://www.evlumba.com/tasarimcilar/supa_${widget.designerId}';
-    final text = '${profile.displayName} - Evlumba\'da bu tasarımcıya bak!\n$link';
+    final link =
+        'https://www.evlumba.com/tasarimcilar/supa_${widget.designerId}';
+    final text =
+        '${profile.displayName} - Evlumba\'da bu tasarımcıya bak!\n$link';
 
     showModalBottomSheet(
       context: context,
@@ -293,7 +307,9 @@ class _DesignerProfileScreenState extends State<DesignerProfileScreen>
           Navigator.pop(context);
           final encoded = Uri.encodeComponent(text);
           final uri = Uri.parse('https://wa.me/?text=$encoded');
-          if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          }
         },
         onInstagram: () async {
           Navigator.pop(context);
@@ -303,7 +319,10 @@ class _DesignerProfileScreenState extends State<DesignerProfileScreen>
           Navigator.pop(context);
           Clipboard.setData(ClipboardData(text: link));
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Link kopyalandı'), behavior: SnackBarBehavior.floating, duration: Duration(seconds: 2)),
+            const SnackBar(
+                content: Text('Link kopyalandı'),
+                behavior: SnackBarBehavior.floating,
+                duration: Duration(seconds: 2)),
           );
         },
       ),
@@ -313,8 +332,57 @@ class _DesignerProfileScreenState extends State<DesignerProfileScreen>
   void _showSnack(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating, duration: const Duration(seconds: 2)),
+      SnackBar(
+          content: Text(msg),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2)),
     );
+  }
+
+  Future<void> _reportReview(DesignerReview review) async {
+    final currentUser = supabase.auth.currentUser;
+    if (currentUser == null) {
+      context.push('/login');
+      return;
+    }
+    if (review.homeownerId == currentUser.id) {
+      _showSnack('Kendi değerlendirmeni şikayet edemezsin.');
+      return;
+    }
+
+    final result = await showReportBlockSheet(
+      context: context,
+      targetLabel: 'Değerlendirme',
+    );
+    if (result == null) return;
+
+    try {
+      await ModerationService.reportContent(
+        contentType: 'designer_review',
+        contentId: review.id,
+        contentOwnerId: review.homeownerId,
+        reason: result.reason,
+        contentPreview: review.reviewText,
+      );
+
+      if (result.blockAuthor) {
+        await ModerationService.blockUser(
+          blockedUserId: review.homeownerId,
+          reason: result.reason,
+          sourceType: 'designer_review',
+          sourceId: review.id,
+        );
+        setState(() {
+          _reviews.removeWhere((r) => r.homeownerId == review.homeownerId);
+        });
+      }
+
+      _showSnack(result.blockAuthor
+          ? 'Şikayet alındı ve kullanıcı engellendi.'
+          : 'Şikayet alındı. 24 saat içinde incelenecek.');
+    } catch (e) {
+      _showSnack('Şikayet gönderilemedi: $e');
+    }
   }
 
   Future<void> _startConversation() async {
@@ -341,7 +409,7 @@ class _DesignerProfileScreenState extends State<DesignerProfileScreen>
 
       String conversationId;
       if (existingData != null) {
-        conversationId = (existingData as Map<String, dynamic>)['id'] as String;
+        conversationId = existingData['id'] as String;
       } else {
         final newConv = await supabase
             .from('conversations')
@@ -351,7 +419,7 @@ class _DesignerProfileScreenState extends State<DesignerProfileScreen>
             })
             .select('id')
             .single();
-        conversationId = (newConv as Map<String, dynamic>)['id'] as String;
+        conversationId = newConv['id'] as String;
       }
 
       if (mounted) {
@@ -505,8 +573,16 @@ class _DesignerProfileScreenState extends State<DesignerProfileScreen>
                 : ListView.builder(
                     padding: const EdgeInsets.all(16),
                     itemCount: _reviews.length,
-                    itemBuilder: (context, index) =>
-                        ReviewCard(review: _reviews[index]),
+                    itemBuilder: (context, index) {
+                      final review = _reviews[index];
+                      final currentUserId = supabase.auth.currentUser?.id;
+                      return ReviewCard(
+                        review: review,
+                        canReport: currentUserId != null &&
+                            review.homeownerId != currentUserId,
+                        onReport: () => _reportReview(review),
+                      );
+                    },
                   ),
           ],
         ),
@@ -568,16 +644,17 @@ class _ProfileHeader extends StatelessWidget {
                   ],
                 ),
                 clipBehavior: Clip.hardEdge,
-                child: profile.avatarUrl != null && profile.avatarUrl!.isNotEmpty
-                    ? SmartImage(url: profile.avatarUrl, fit: BoxFit.cover)
-                    : Container(
-                        color: AppColors.primary.withOpacity(0.1),
-                        child: const Icon(
-                          Icons.person,
-                          color: AppColors.primary,
-                          size: 36,
-                        ),
-                      ),
+                child:
+                    profile.avatarUrl != null && profile.avatarUrl!.isNotEmpty
+                        ? SmartImage(url: profile.avatarUrl, fit: BoxFit.cover)
+                        : Container(
+                            color: AppColors.primary.withOpacity(0.1),
+                            child: const Icon(
+                              Icons.person,
+                              color: AppColors.primary,
+                              size: 36,
+                            ),
+                          ),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -586,8 +663,7 @@ class _ProfileHeader extends StatelessWidget {
                   children: [
                     Text(
                       profile.displayName,
-                      style:
-                          Theme.of(context).textTheme.headlineSmall,
+                      style: Theme.of(context).textTheme.headlineSmall,
                     ),
                     if (profile.specialty != null) ...[
                       const SizedBox(height: 2),
@@ -788,8 +864,7 @@ class _ContactItem extends StatelessWidget {
                   fontSize: 14,
                   color:
                       onTap != null ? AppColors.primary : AppColors.textPrimary,
-                  decoration:
-                      onTap != null ? TextDecoration.underline : null,
+                  decoration: onTap != null ? TextDecoration.underline : null,
                 ),
               ),
             ),
@@ -863,19 +938,27 @@ class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.only(
-          left: 24, right: 24, top: 20,
+          left: 24,
+          right: 24,
+          top: 20,
           bottom: MediaQuery.of(context).viewInsets.bottom + 24,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2)),
             ),
             const SizedBox(height: 20),
             const Text('Profesyonel Havuzuna Ekle',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary)),
             const SizedBox(height: 16),
             ...widget.collections.map((col) {
               final id = col['id'] as String;
@@ -883,10 +966,14 @@ class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
               final isSaved = widget.savedInIds.contains(id);
               return ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: Text(title, style: const TextStyle(fontSize: 15, color: AppColors.textPrimary)),
+                title: Text(title,
+                    style: const TextStyle(
+                        fontSize: 15, color: AppColors.textPrimary)),
                 trailing: isSaved
-                    ? const Icon(Icons.check_circle, color: AppColors.primary, size: 22)
-                    : const Icon(Icons.radio_button_unchecked, color: AppColors.border, size: 22),
+                    ? const Icon(Icons.check_circle,
+                        color: AppColors.primary, size: 22)
+                    : const Icon(Icons.radio_button_unchecked,
+                        color: AppColors.border, size: 22),
                 onTap: () => widget.onToggle(id, title),
               );
             }),
@@ -897,25 +984,33 @@ class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
                 autofocus: true,
                 decoration: InputDecoration(
                   hintText: 'Koleksiyon adı…',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 ),
-                onSubmitted: (v) { if (v.trim().isNotEmpty) widget.onCreateNew(v.trim()); },
+                onSubmitted: (v) {
+                  if (v.trim().isNotEmpty) widget.onCreateNew(v.trim());
+                },
               ),
               const SizedBox(height: 10),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () {
-                    if (_controller.text.trim().isNotEmpty) widget.onCreateNew(_controller.text.trim());
+                    if (_controller.text.trim().isNotEmpty) {
+                      widget.onCreateNew(_controller.text.trim());
+                    }
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
-                  child: const Text('Oluştur ve Ekle', style: TextStyle(fontWeight: FontWeight.w600)),
+                  child: const Text('Oluştur ve Ekle',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
                 ),
               ),
             ] else
@@ -953,17 +1048,37 @@ class _ShareSheet extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(width: 40, height: 4,
-              decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2))),
+            Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: AppColors.border,
+                    borderRadius: BorderRadius.circular(2))),
             const SizedBox(height: 20),
-            const Text('Paylaş', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+            const Text('Paylaş',
+                style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary)),
             const SizedBox(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                _ShareOption(icon: Icons.chat_rounded, color: const Color(0xFF25D366), label: 'WhatsApp', onTap: onWhatsApp),
-                _ShareOption(icon: Icons.camera_alt_rounded, color: const Color(0xFFE1306C), label: 'Instagram', onTap: onInstagram),
-                _ShareOption(icon: Icons.link_rounded, color: AppColors.primary, label: 'Link Kopyala', onTap: onCopyLink),
+                _ShareOption(
+                    icon: Icons.chat_rounded,
+                    color: const Color(0xFF25D366),
+                    label: 'WhatsApp',
+                    onTap: onWhatsApp),
+                _ShareOption(
+                    icon: Icons.camera_alt_rounded,
+                    color: const Color(0xFFE1306C),
+                    label: 'Instagram',
+                    onTap: onInstagram),
+                _ShareOption(
+                    icon: Icons.link_rounded,
+                    color: AppColors.primary,
+                    label: 'Link Kopyala',
+                    onTap: onCopyLink),
               ],
             ),
             const SizedBox(height: 8),
@@ -980,7 +1095,11 @@ class _ShareOption extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
 
-  const _ShareOption({required this.icon, required this.color, required this.label, required this.onTap});
+  const _ShareOption(
+      {required this.icon,
+      required this.color,
+      required this.label,
+      required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -990,12 +1109,18 @@ class _ShareOption extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 64, height: 64,
-            decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+                color: color.withOpacity(0.1), shape: BoxShape.circle),
             child: Icon(icon, color: color, size: 28),
           ),
           const SizedBox(height: 8),
-          Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textPrimary, fontWeight: FontWeight.w500)),
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w500)),
         ],
       ),
     );

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/supabase_client.dart';
 import '../../core/theme.dart';
 import '../../models/forum.dart';
+import '../../services/moderation_service.dart';
 
 /// Slugify helper (Turkish-aware)
 String _slugify(String value) {
@@ -23,8 +24,18 @@ String _slugify(String value) {
 
 String _formatDate(DateTime dt) {
   const months = [
-    'Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz',
-    'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara',
+    'Oca',
+    'Şub',
+    'Mar',
+    'Nis',
+    'May',
+    'Haz',
+    'Tem',
+    'Ağu',
+    'Eyl',
+    'Eki',
+    'Kas',
+    'Ara',
   ];
   return '${dt.day} ${months[dt.month - 1]} ${dt.year}, '
       '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
@@ -51,8 +62,7 @@ class _ForumScreenState extends State<ForumScreen> {
 
   bool get _isProfessional =>
       _role == 'designer' || _role == 'designer_pending';
-  bool get _isAdmin =>
-      _adminRole == 'admin' || _adminRole == 'super_admin';
+  bool get _isAdmin => _adminRole == 'admin' || _adminRole == 'super_admin';
   bool get _canJoinForum => _isProfessional || _isAdmin;
   bool get _canParticipate =>
       _userId != null && _member != null && _canJoinForum;
@@ -90,15 +100,15 @@ class _ForumScreenState extends State<ForumScreen> {
     final adminFuture =
         supabase.rpc('get_admin_role', params: {'user_uuid': _userId!});
 
-    final results = await Future.wait<dynamic>(
-        [profileFuture, memberFuture, adminFuture]);
+    final results =
+        await Future.wait<dynamic>([profileFuture, memberFuture, adminFuture]);
 
     final profile = results[0] as Map<String, dynamic>?;
     final memberData = results[1] as Map<String, dynamic>?;
     final adminRoleData = results[2];
 
-    _role = profile?['role'] as String? ??
-        user?.userMetadata?['role'] as String?;
+    _role =
+        profile?['role'] as String? ?? user?.userMetadata?['role'] as String?;
     _adminRole = (adminRoleData == 'admin' || adminRoleData == 'super_admin')
         ? adminRoleData as String
         : null;
@@ -108,7 +118,8 @@ class _ForumScreenState extends State<ForumScreen> {
   Future<void> _loadTopics() async {
     final resp = await supabase
         .from('forum_topics')
-        .select('id, slug, title, is_pinned, starter_body, created_at, last_post_at')
+        .select(
+            'id, slug, title, is_pinned, starter_body, created_at, last_post_at')
         .order('is_pinned', ascending: false)
         .order('last_post_at', ascending: false);
 
@@ -118,9 +129,7 @@ class _ForumScreenState extends State<ForumScreen> {
   List<ForumTopic> get _filtered {
     final q = _search.trim().toLowerCase();
     if (q.isEmpty) return _topics;
-    return _topics
-        .where((t) => t.title.toLowerCase().contains(q))
-        .toList();
+    return _topics.where((t) => t.title.toLowerCase().contains(q)).toList();
   }
 
   // ──────────── Join forum ────────────
@@ -219,7 +228,9 @@ class _ForumScreenState extends State<ForumScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) => Padding(
           padding: EdgeInsets.fromLTRB(
-            20, 20, 20,
+            20,
+            20,
+            20,
             MediaQuery.of(ctx).viewInsets.bottom + 20,
           ),
           child: Column(
@@ -262,13 +273,19 @@ class _ForumScreenState extends State<ForumScreen> {
                           _showSnack('Mesaj en az 5 karakter olmalı.');
                           return;
                         }
+                        final moderation =
+                            ModerationService.validateText('$title $body');
+                        if (!moderation.isAllowed) {
+                          _showSnack(moderation.message!);
+                          return;
+                        }
 
                         setSheetState(() => creating = true);
 
-                        final usedSlugs =
-                            _topics.map((t) => t.slug).toSet();
-                        final base =
-                            _slugify(title).isNotEmpty ? _slugify(title) : 'konu-${DateTime.now().millisecondsSinceEpoch}';
+                        final usedSlugs = _topics.map((t) => t.slug).toSet();
+                        final base = _slugify(title).isNotEmpty
+                            ? _slugify(title)
+                            : 'konu-${DateTime.now().millisecondsSinceEpoch}';
                         var slug = base;
                         var counter = 2;
                         while (usedSlugs.contains(slug)) {
@@ -285,7 +302,8 @@ class _ForumScreenState extends State<ForumScreen> {
                                 'created_by': _userId!,
                                 'is_pinned': false,
                               })
-                              .select('id, slug, title, is_pinned, starter_body, created_at, last_post_at')
+                              .select(
+                                  'id, slug, title, is_pinned, starter_body, created_at, last_post_at')
                               .single();
 
                           await supabase.from('forum_posts').insert({
@@ -410,8 +428,8 @@ class _ForumScreenState extends State<ForumScreen> {
                         ),
                         child: Text(
                           _error!,
-                          style: TextStyle(
-                              color: AppColors.error, fontSize: 13),
+                          style:
+                              TextStyle(color: AppColors.error, fontSize: 13),
                         ),
                       ),
                     ),

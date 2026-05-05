@@ -4,6 +4,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/supabase_client.dart';
 import '../../core/theme.dart';
+import '../../services/moderation_service.dart';
+import '../../widgets/terms_agreement.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -18,7 +20,9 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _loading = false;
   bool _googleLoading = false;
+  bool _appleLoading = false;
   bool _obscurePassword = true;
+  bool _termsAccepted = false;
   String? _errorMessage;
 
   @override
@@ -29,7 +33,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _forgotPassword() async {
-    final emailController = TextEditingController(text: _emailController.text.trim());
+    final emailController =
+        TextEditingController(text: _emailController.text.trim());
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -38,17 +43,21 @@ class _LoginScreenState extends State<LoginScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('E-posta adresinizi girin, şifre sıfırlama bağlantısı gönderelim.', style: TextStyle(fontSize: 13)),
+            const Text(
+                'E-posta adresinizi girin, şifre sıfırlama bağlantısı gönderelim.',
+                style: TextStyle(fontSize: 13)),
             const SizedBox(height: 12),
             TextField(
               controller: emailController,
               keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(labelText: 'E-posta', prefixIcon: Icon(Icons.email_outlined)),
+              decoration: const InputDecoration(
+                  labelText: 'E-posta', prefixIcon: Icon(Icons.email_outlined)),
             ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('İptal')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('İptal')),
           TextButton(
             onPressed: () => Navigator.pop(ctx, emailController.text.trim()),
             child: const Text('Gönder'),
@@ -62,11 +71,14 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       await supabase.auth.resetPasswordForEmail(
         result,
-        redirectTo: 'https://www.evlumba.com/auth/callback?type=recovery&next=/sifre-yenile',
+        redirectTo:
+            'https://www.evlumba.com/auth/callback?type=recovery&next=/sifre-yenile',
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Şifre sıfırlama bağlantısı gönderildi. E-postanı kontrol et.')),
+          const SnackBar(
+              content: Text(
+                  'Şifre sıfırlama bağlantısı gönderildi. E-postanı kontrol et.')),
         );
       }
     } catch (e) {
@@ -79,6 +91,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _signIn() async {
+    if (!_requireTerms()) return;
     if (!_formKey.currentState!.validate()) return;
     setState(() {
       _loading = true;
@@ -90,6 +103,7 @@ class _LoginScreenState extends State<LoginScreen> {
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
+      await ModerationService.acceptTerms(surface: 'login_password');
       if (mounted) {
         context.go('/home');
       }
@@ -109,6 +123,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _signInWithGoogle() async {
+    if (!_requireTerms()) return;
     // Google Sign-In requires platform-specific setup:
     // Android: Add google-services.json and configure SHA-1 in Firebase/Supabase
     // iOS: Add GoogleService-Info.plist and configure URL schemes in Info.plist
@@ -134,6 +149,41 @@ class _LoginScreenState extends State<LoginScreen> {
         setState(() => _googleLoading = false);
       }
     }
+  }
+
+  Future<void> _signInWithApple() async {
+    if (!_requireTerms()) return;
+    setState(() {
+      _appleLoading = true;
+      _errorMessage = null;
+    });
+    try {
+      await supabase.auth.signInWithOAuth(
+        OAuthProvider.apple,
+        redirectTo: 'io.supabase.evlumba://login-callback/',
+      );
+    } on AuthException catch (e) {
+      setState(() {
+        _errorMessage = _localizeAuthError(e.message);
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Apple ile giriş başarısız.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _appleLoading = false);
+      }
+    }
+  }
+
+  bool _requireTerms() {
+    if (_termsAccepted) return true;
+    setState(() {
+      _errorMessage =
+          'Devam etmek için Kullanım Koşulları ve Topluluk Kuralları onayı zorunlu.';
+    });
+    return false;
   }
 
   String _localizeAuthError(String message) {
@@ -187,13 +237,20 @@ class _LoginScreenState extends State<LoginScreen> {
                       color: AppColors.textSecondary,
                     ),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 20),
+              TermsAgreement(
+                value: _termsAccepted,
+                onChanged: (value) => setState(() => _termsAccepted = value),
+              ),
+              const SizedBox(height: 20),
 
               // Google Sign-In
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  onPressed: _googleLoading ? null : _signInWithGoogle,
+                  onPressed: (_googleLoading || _appleLoading)
+                      ? null
+                      : _signInWithGoogle,
                   icon: _googleLoading
                       ? const SizedBox(
                           width: 18,
@@ -202,7 +259,30 @@ class _LoginScreenState extends State<LoginScreen> {
                         )
                       : const Icon(Icons.g_mobiledata, size: 22),
                   label: Text(
-                    _googleLoading ? 'Yönlendiriliyor...' : 'Google ile giriş yap',
+                    _googleLoading
+                        ? 'Yönlendiriliyor...'
+                        : 'Google ile giriş yap',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: (_googleLoading || _appleLoading)
+                      ? null
+                      : _signInWithApple,
+                  icon: _appleLoading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.apple, size: 22),
+                  label: Text(
+                    _appleLoading
+                        ? 'Yönlendiriliyor...'
+                        : 'Apple ile giriş yap',
                   ),
                 ),
               ),
@@ -261,7 +341,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                 : Icons.visibility_off_outlined,
                           ),
                           onPressed: () {
-                            setState(() => _obscurePassword = !_obscurePassword);
+                            setState(
+                                () => _obscurePassword = !_obscurePassword);
                           },
                         ),
                       ),
@@ -276,7 +357,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       alignment: Alignment.centerRight,
                       child: TextButton(
                         onPressed: _forgotPassword,
-                        child: const Text('Şifremi Unuttum', style: TextStyle(fontSize: 13)),
+                        child: const Text('Şifremi Unuttum',
+                            style: TextStyle(fontSize: 13)),
                       ),
                     ),
                     if (_errorMessage != null)

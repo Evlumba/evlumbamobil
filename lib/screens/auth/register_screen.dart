@@ -6,6 +6,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/supabase_client.dart';
 import '../../core/theme.dart';
+import '../../services/moderation_service.dart';
+import '../../widgets/terms_agreement.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -22,8 +24,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   String _role = 'homeowner';
   bool _loading = false;
   bool _googleLoading = false;
+  bool _appleLoading = false;
   bool _obscurePassword = true;
-  bool _contactConsent = false;
+  bool _termsAccepted = false;
   String? _errorMessage;
 
   @override
@@ -35,12 +38,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> _register() async {
-    if (!_contactConsent) {
-      setState(() {
-        _errorMessage = 'Devam etmek için iletişim onayı zorunlu.';
-      });
-      return;
-    }
+    if (!_requireTerms()) return;
     if (!_formKey.currentState!.validate()) return;
 
     setState(() {
@@ -59,16 +57,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final client = http.Client();
       http.Response res;
       try {
-        res = await client.post(
-          Uri.parse('https://www.evlumba.com/api/auth/register'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'name': name, 'email': email, 'password': password, 'role': _role}),
-        ).timeout(const Duration(seconds: 15));
+        res = await client
+            .post(
+              Uri.parse('https://www.evlumba.com/api/auth/register'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({
+                'name': name,
+                'email': email,
+                'password': password,
+                'role': _role
+              }),
+            )
+            .timeout(const Duration(seconds: 15));
       } finally {
         client.close();
       }
 
-      debugPrint('Register response ${res.statusCode}: ${res.body.substring(0, res.body.length.clamp(0, 300))}');
+      debugPrint(
+          'Register response ${res.statusCode}: ${res.body.substring(0, res.body.length.clamp(0, 300))}');
       final body = jsonDecode(res.body) as Map<String, dynamic>;
 
       if (res.statusCode != 200 || body['ok'] != true) {
@@ -80,6 +86,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       // Kullanıcı oluşturuldu, şimdi giriş yap
       await supabase.auth.signInWithPassword(email: email, password: password);
+      await ModerationService.acceptTerms(surface: 'register_password');
 
       if (mounted) {
         if (_role == 'designer') {
@@ -104,12 +111,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> _signUpWithGoogle() async {
-    if (!_contactConsent) {
-      setState(() {
-        _errorMessage = 'Google ile kayıt için iletişim onayı zorunlu.';
-      });
-      return;
-    }
+    if (!_requireTerms()) return;
     // Google Sign-In requires platform-specific setup:
     // Android: Add google-services.json and configure SHA-1
     // iOS: Add GoogleService-Info.plist and URL schemes
@@ -135,6 +137,41 @@ class _RegisterScreenState extends State<RegisterScreen> {
         setState(() => _googleLoading = false);
       }
     }
+  }
+
+  Future<void> _signUpWithApple() async {
+    if (!_requireTerms()) return;
+    setState(() {
+      _appleLoading = true;
+      _errorMessage = null;
+    });
+    try {
+      await supabase.auth.signInWithOAuth(
+        OAuthProvider.apple,
+        redirectTo: 'io.supabase.evlumba://login-callback/',
+      );
+    } on AuthException catch (e) {
+      setState(() {
+        _errorMessage = _localizeAuthError(e.message);
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Apple ile kayıt başarısız.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _appleLoading = false);
+      }
+    }
+  }
+
+  bool _requireTerms() {
+    if (_termsAccepted) return true;
+    setState(() {
+      _errorMessage =
+          'Devam etmek için Kullanım Koşulları ve Topluluk Kuralları onayı zorunlu.';
+    });
+    return false;
   }
 
   String _localizeAuthError(String message) {
@@ -204,12 +241,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ],
               ),
               const SizedBox(height: 24),
+              TermsAgreement(
+                value: _termsAccepted,
+                onChanged: (value) => setState(() => _termsAccepted = value),
+              ),
+              const SizedBox(height: 16),
 
               // Google Sign-Up
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  onPressed: _googleLoading ? null : _signUpWithGoogle,
+                  onPressed: (_googleLoading || _appleLoading)
+                      ? null
+                      : _signUpWithGoogle,
                   icon: _googleLoading
                       ? const SizedBox(
                           width: 18,
@@ -221,8 +265,31 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     _googleLoading
                         ? 'Yönlendiriliyor...'
                         : _role == 'designer'
-                        ? 'Google ile profesyonel kayıt ol'
-                        : 'Google ile kayıt ol',
+                            ? 'Google ile profesyonel kayıt ol'
+                            : 'Google ile kayıt ol',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: (_googleLoading || _appleLoading)
+                      ? null
+                      : _signUpWithApple,
+                  icon: _appleLoading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.apple, size: 22),
+                  label: Text(
+                    _appleLoading
+                        ? 'Yönlendiriliyor...'
+                        : _role == 'designer'
+                            ? 'Apple ile profesyonel kayıt ol'
+                            : 'Apple ile kayıt ol',
                   ),
                 ),
               ),
@@ -307,38 +374,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       },
                     ),
                     const SizedBox(height: 16),
-
-                    // Contact consent
-                    GestureDetector(
-                      onTap: () =>
-                          setState(() => _contactConsent = !_contactConsent),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Checkbox(
-                            value: _contactConsent,
-                            onChanged: (val) =>
-                                setState(() => _contactConsent = val ?? false),
-                            activeColor: AppColors.primary,
-                          ),
-                          Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.only(top: 12),
-                              child: Text(
-                                'İletişim sayfasını okudum ve onaylıyorum.',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(
-                                      color: AppColors.textSecondary,
-                                    ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
                     if (_errorMessage != null) ...[
                       const SizedBox(height: 8),
                       Container(

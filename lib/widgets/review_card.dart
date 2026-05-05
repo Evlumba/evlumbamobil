@@ -6,8 +6,15 @@ import 'star_rating.dart';
 
 class ReviewCard extends StatelessWidget {
   final DesignerReview review;
+  final bool canReport;
+  final VoidCallback? onReport;
 
-  const ReviewCard({super.key, required this.review});
+  const ReviewCard({
+    super.key,
+    required this.review,
+    this.canReport = false,
+    this.onReport,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -66,6 +73,18 @@ class ReviewCard extends StatelessWidget {
                 ),
               ),
               StarRating(rating: review.rating, size: 14),
+              if (canReport)
+                IconButton(
+                  tooltip: 'Şikayet et veya engelle',
+                  onPressed: onReport,
+                  icon: const Icon(Icons.more_horiz, size: 18),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 30,
+                    minHeight: 30,
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 10),

@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 import '../../core/supabase_client.dart';
 import '../../core/theme.dart';
 import '../../models/message.dart';
+import '../../services/moderation_service.dart';
+import '../../widgets/report_block_sheet.dart';
 import '../../widgets/smart_image.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -34,6 +36,7 @@ class _ChatScreenState extends State<ChatScreen> {
   List<Message> _messages = [];
   bool _loading = true;
   bool _sending = false;
+  bool _blockedOtherParty = false;
   StreamSubscription<List<Map<String, dynamic>>>? _subscription;
 
   @override
@@ -55,13 +58,21 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _fetchMessages() async {
     setState(() => _loading = true);
     try {
+      final blockedIds = await ModerationService.loadBlockedUserIds();
+      final blockedOther = widget.otherPartyId != null &&
+          blockedIds.contains(widget.otherPartyId);
       final data = await supabase
           .from('messages')
           .select('id, conversation_id, sender_id, body, read_at, created_at')
           .eq('conversation_id', widget.conversationId)
           .order('created_at', ascending: true);
       setState(() {
-        _messages = (data as List).map((e) => Message.fromJson(e as Map<String, dynamic>)).toList();
+        _blockedOtherParty = blockedOther;
+        _messages = _visibleMessages(
+          (data as List)
+              .map((e) => Message.fromJson(e as Map<String, dynamic>))
+              .toList(),
+        );
         _loading = false;
       });
       _scrollToBottom();
@@ -77,7 +88,10 @@ class _ChatScreenState extends State<ChatScreen> {
         .eq('conversation_id', widget.conversationId)
         .order('created_at', ascending: true)
         .listen((data) {
-          setState(() => _messages = data.map((e) => Message.fromJson(e)).toList());
+          setState(() {
+            _messages =
+                _visibleMessages(data.map((e) => Message.fromJson(e)).toList());
+          });
           _scrollToBottom();
           _markMessagesAsRead();
         });
@@ -96,6 +110,15 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _sendMessage() async {
     final body = _messageController.text.trim();
     if (body.isEmpty || _sending) return;
+    if (_blockedOtherParty) {
+      _showSnack('Engellediğin kullanıcıya mesaj gönderemezsin.');
+      return;
+    }
+    final moderation = ModerationService.validateText(body);
+    if (!moderation.isAllowed) {
+      _showSnack(moderation.message!);
+      return;
+    }
     final currentUser = supabase.auth.currentUser;
     if (currentUser == null) return;
     setState(() => _sending = true);
@@ -118,6 +141,70 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  List<Message> _visibleMessages(List<Message> messages) {
+    final blockedUserId = widget.otherPartyId;
+    if (!_blockedOtherParty || blockedUserId == null) return messages;
+    return messages
+        .where((message) => message.senderId != blockedUserId)
+        .toList();
+  }
+
+  Future<void> _reportOrBlockConversation() async {
+    final otherPartyId = widget.otherPartyId;
+    if (otherPartyId == null || otherPartyId.isEmpty) {
+      _showSnack('Bu kullanıcı için işlem yapılamıyor.');
+      return;
+    }
+    final result = await showReportBlockSheet(
+      context: context,
+      targetLabel: 'Mesajlaşma',
+    );
+    if (result == null) return;
+
+    try {
+      await ModerationService.reportContent(
+        contentType: 'conversation',
+        contentId: widget.conversationId,
+        contentOwnerId: otherPartyId,
+        reason: result.reason,
+        contentPreview: _latestOtherPartyMessage(),
+      );
+      if (result.blockAuthor) {
+        await ModerationService.blockUser(
+          blockedUserId: otherPartyId,
+          reason: result.reason,
+          sourceType: 'conversation',
+          sourceId: widget.conversationId,
+        );
+        setState(() {
+          _blockedOtherParty = true;
+          _messages = _visibleMessages(_messages);
+        });
+      }
+      _showSnack(result.blockAuthor
+          ? 'Şikayet alındı ve kullanıcı engellendi.'
+          : 'Şikayet alındı. 24 saat içinde incelenecek.');
+    } catch (e) {
+      _showSnack('Şikayet gönderilemedi: $e');
+    }
+  }
+
+  String? _latestOtherPartyMessage() {
+    final otherPartyId = widget.otherPartyId;
+    if (otherPartyId == null) return null;
+    for (final message in _messages.reversed) {
+      if (message.senderId == otherPartyId) return message.body;
+    }
+    return null;
+  }
+
+  void _showSnack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(msg)));
+  }
+
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
@@ -134,9 +221,12 @@ class _ChatScreenState extends State<ChatScreen> {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final msgDay = DateTime(date.year, date.month, date.day);
-    final timeStr = '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+    final timeStr =
+        '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
     if (msgDay == today) return 'Bugün $timeStr';
-    if (msgDay == today.subtract(const Duration(days: 1))) return 'Dün $timeStr';
+    if (msgDay == today.subtract(const Duration(days: 1))) {
+      return 'Dün $timeStr';
+    }
     return '${date.day}/${date.month} $timeStr';
   }
 
@@ -159,24 +249,30 @@ class _ChatScreenState extends State<ChatScreen> {
                       )
                     : ListView.builder(
                         controller: _scrollController,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
                         itemCount: _messages.length,
                         itemBuilder: (context, index) {
                           final message = _messages[index];
                           final isMe = message.senderId == currentUserId;
                           final showDate = index == 0 ||
-                              _messages[index].createdAt
-                                      .difference(_messages[index - 1].createdAt)
+                              _messages[index]
+                                      .createdAt
+                                      .difference(
+                                          _messages[index - 1].createdAt)
                                       .inMinutes >
                                   30;
                           return Column(
                             children: [
                               if (showDate)
                                 Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 12),
                                   child: Text(
                                     _formatDate(message.createdAt),
-                                    style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                                    style: const TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.textSecondary),
                                   ),
                                 ),
                               _MessageBubble(message: message, isMe: isMe),
@@ -189,6 +285,7 @@ class _ChatScreenState extends State<ChatScreen> {
             controller: _messageController,
             onSend: _sendMessage,
             isSending: _sending,
+            enabled: !_blockedOtherParty,
           ),
         ],
       ),
@@ -206,7 +303,8 @@ class _ChatScreenState extends State<ChatScreen> {
       leadingWidth: 40,
       leading: IconButton(
         padding: EdgeInsets.zero,
-        icon: const Icon(Icons.chevron_left, color: AppColors.textPrimary, size: 28),
+        icon: const Icon(Icons.chevron_left,
+            color: AppColors.textPrimary, size: 28),
         onPressed: () => context.pop(),
       ),
       title: Row(
@@ -223,7 +321,10 @@ class _ChatScreenState extends State<ChatScreen> {
                     child: Center(
                       child: Text(
                         widget.otherPartyName.substring(0, 1).toUpperCase(),
-                        style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.primary, fontSize: 18),
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primary,
+                            fontSize: 18),
                       ),
                     ),
                   ),
@@ -235,21 +336,30 @@ class _ChatScreenState extends State<ChatScreen> {
               children: [
                 Text(
                   widget.otherPartyName,
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                  style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 if (specialty != null && specialty.isNotEmpty)
                   Text(
                     specialty,
-                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w400),
+                    style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                        fontWeight: FontWeight.w400),
                   ),
                 if (designerId != null && designerId.isNotEmpty)
                   GestureDetector(
                     onTap: () => context.push('/designers/$designerId'),
                     child: const Text(
                       'Profilini Gör',
-                      style: TextStyle(fontSize: 11, color: AppColors.primary, fontWeight: FontWeight.w500),
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w500),
                     ),
                   ),
               ],
@@ -261,6 +371,11 @@ class _ChatScreenState extends State<ChatScreen> {
         IconButton(
           icon: const Icon(Icons.phone_outlined, color: AppColors.textPrimary),
           onPressed: () {},
+        ),
+        IconButton(
+          tooltip: 'Şikayet et veya engelle',
+          icon: const Icon(Icons.more_vert, color: AppColors.textPrimary),
+          onPressed: _reportOrBlockConversation,
         ),
       ],
     );
@@ -298,11 +413,15 @@ class _MessageBubble extends StatelessWidget {
             bottomRight: Radius.circular(isMe ? 4 : 18),
           ),
           boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 6, offset: const Offset(0, 2)),
+            BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 6,
+                offset: const Offset(0, 2)),
           ],
         ),
         child: Column(
-          crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          crossAxisAlignment:
+              isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
             Text(
               message.body,
@@ -320,20 +439,27 @@ class _MessageBubble extends StatelessWidget {
                   timeStr,
                   style: TextStyle(
                     fontSize: 10,
-                    color: isMe ? Colors.white.withOpacity(0.7) : AppColors.textSecondary,
+                    color: isMe
+                        ? Colors.white.withOpacity(0.7)
+                        : AppColors.textSecondary,
                   ),
                 ),
                 if (isMe) ...[
                   const SizedBox(width: 4),
                   Icon(
-                    message.isRead ? Icons.done_all_rounded : Icons.done_rounded,
+                    message.isRead
+                        ? Icons.done_all_rounded
+                        : Icons.done_rounded,
                     size: 12,
-                    color: message.isRead ? Colors.white : Colors.white.withOpacity(0.6),
+                    color: message.isRead
+                        ? Colors.white
+                        : Colors.white.withOpacity(0.6),
                   ),
                   const SizedBox(width: 2),
                   Text(
                     message.isRead ? 'Okundu' : '',
-                    style: TextStyle(fontSize: 9, color: Colors.white.withOpacity(0.7)),
+                    style: TextStyle(
+                        fontSize: 9, color: Colors.white.withOpacity(0.7)),
                   ),
                 ],
               ],
@@ -351,17 +477,20 @@ class _MessageInput extends StatelessWidget {
   final TextEditingController controller;
   final VoidCallback onSend;
   final bool isSending;
+  final bool enabled;
 
   const _MessageInput({
     required this.controller,
     required this.onSend,
     required this.isSending,
+    required this.enabled,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: EdgeInsets.fromLTRB(12, 10, 12, 10 + MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.fromLTRB(
+          12, 10, 12, 10 + MediaQuery.of(context).viewInsets.bottom),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(top: BorderSide(color: AppColors.border)),
@@ -377,7 +506,8 @@ class _MessageInput extends StatelessWidget {
               shape: BoxShape.circle,
               border: Border.all(color: AppColors.border),
             ),
-            child: const Icon(Icons.add, color: AppColors.textSecondary, size: 20),
+            child:
+                const Icon(Icons.add, color: AppColors.textSecondary, size: 20),
           ),
           const SizedBox(width: 8),
 
@@ -391,12 +521,15 @@ class _MessageInput extends StatelessWidget {
               ),
               child: TextField(
                 controller: controller,
+                enabled: enabled,
                 maxLines: null,
                 textCapitalization: TextCapitalization.sentences,
                 decoration: const InputDecoration(
                   hintText: 'Bir mesaj yaz...',
-                  hintStyle: TextStyle(color: AppColors.textSecondary, fontSize: 14),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  hintStyle:
+                      TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   border: InputBorder.none,
                   isDense: true,
                 ),
@@ -408,26 +541,34 @@ class _MessageInput extends StatelessWidget {
 
           // Send button
           GestureDetector(
-            onTap: isSending ? null : onSend,
+            onTap: isSending || !enabled ? null : onSend,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
-                color: isSending ? AppColors.primary.withOpacity(0.5) : AppColors.primary,
+                color: isSending || !enabled
+                    ? AppColors.primary.withOpacity(0.5)
+                    : AppColors.primary,
                 borderRadius: BorderRadius.circular(24),
               ),
               child: isSending
                   ? const SizedBox(
                       width: 16,
                       height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
                     )
-                  : const Text('Gönder', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+                  : const Text('Gönder',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600)),
             ),
           ),
           const SizedBox(width: 6),
 
           // Mic
-          const Icon(Icons.mic_none_outlined, color: AppColors.textSecondary, size: 24),
+          const Icon(Icons.mic_none_outlined,
+              color: AppColors.textSecondary, size: 24),
         ],
       ),
     );

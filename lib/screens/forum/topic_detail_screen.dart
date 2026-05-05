@@ -4,11 +4,23 @@ import 'package:go_router/go_router.dart';
 import '../../core/supabase_client.dart';
 import '../../core/theme.dart';
 import '../../models/forum.dart';
+import '../../services/moderation_service.dart';
+import '../../widgets/report_block_sheet.dart';
 
 String _formatDate(DateTime dt) {
   const months = [
-    'Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz',
-    'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara',
+    'Oca',
+    'Şub',
+    'Mar',
+    'Nis',
+    'May',
+    'Haz',
+    'Tem',
+    'Ağu',
+    'Eyl',
+    'Eki',
+    'Kas',
+    'Ara',
   ];
   return '${dt.day} ${months[dt.month - 1]} ${dt.year}, '
       '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
@@ -31,6 +43,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
   String? _userId;
   ForumMember? _member;
   bool _canParticipate = false;
+  Set<String> _blockedUserIds = <String>{};
 
   ForumPost? _replyToPost;
   final _replyController = TextEditingController();
@@ -57,14 +70,18 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     setState(() {
       _loading = true;
     });
-    await Future.wait([_loadAuth(), _loadTopic(), _loadPosts()]);
+    await _loadAuth();
+    await Future.wait([_loadTopic(), _loadPosts()]);
     if (mounted) setState(() => _loading = false);
   }
 
   Future<void> _loadAuth() async {
     final user = supabase.auth.currentUser;
     _userId = user?.id;
-    if (_userId == null) return;
+    if (_userId == null) {
+      _blockedUserIds = <String>{};
+      return;
+    }
 
     final profileFuture = supabase
         .from('profiles')
@@ -79,15 +96,15 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     final adminFuture =
         supabase.rpc('get_admin_role', params: {'user_uuid': _userId!});
 
-    final results = await Future.wait<dynamic>(
-        [profileFuture, memberFuture, adminFuture]);
+    final results =
+        await Future.wait<dynamic>([profileFuture, memberFuture, adminFuture]);
 
     final profile = results[0] as Map<String, dynamic>?;
     final memberData = results[1] as Map<String, dynamic>?;
     final adminRoleData = results[2];
 
-    final role = profile?['role'] as String? ??
-        user?.userMetadata?['role'] as String?;
+    final role =
+        profile?['role'] as String? ?? user?.userMetadata?['role'] as String?;
     final adminRole =
         (adminRoleData == 'admin' || adminRoleData == 'super_admin')
             ? adminRoleData as String
@@ -98,6 +115,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     final isAdmin = adminRole == 'admin' || adminRole == 'super_admin';
     _canParticipate =
         _userId != null && _member != null && (isProfessional || isAdmin);
+    _blockedUserIds = await ModerationService.loadBlockedUserIds();
   }
 
   Future<void> _loadTopic() async {
@@ -121,14 +139,17 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
         .eq('topic_id', widget.topicId)
         .order('created_at', ascending: true);
 
-    final posts =
-        (data as List).map((j) => ForumPost.fromJson(j)).toList();
+    final posts = (data as List).map((j) => ForumPost.fromJson(j)).toList();
 
     // Fetch admin roles for all unique authors
     final authorIds = posts.map((p) => p.authorId).toSet().toList();
     final adminRoles = await _fetchAdminRoles(authorIds);
 
-    _posts = posts
+    final visiblePosts = _blockedUserIds.isEmpty
+        ? posts
+        : posts.where((p) => !_blockedUserIds.contains(p.authorId)).toList();
+
+    _posts = visiblePosts
         .map((p) => p.copyWith(authorAdminRole: adminRoles[p.authorId]))
         .toList();
   }
@@ -167,6 +188,11 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     if (!_canParticipate) return;
     final body = _replyController.text.trim();
     if (body.isEmpty) return;
+    final moderation = ModerationService.validateText(body);
+    if (!moderation.isAllowed) {
+      _showSnack(moderation.message!);
+      return;
+    }
 
     final parentId = _replyToPost != null &&
             _replyToPost!.topicId == widget.topicId &&
@@ -217,6 +243,11 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
       _showSnack('Mesaj boş olamaz.');
       return;
     }
+    final moderation = ModerationService.validateText(body);
+    if (!moderation.isAllowed) {
+      _showSnack(moderation.message!);
+      return;
+    }
 
     setState(() => _savingEdit = true);
 
@@ -245,6 +276,52 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
           _showSnack('Hata: $e');
         }
       }
+    }
+  }
+
+  Future<void> _reportPost(ForumPost post) async {
+    if (_userId == null) {
+      context.push('/login');
+      return;
+    }
+    if (post.authorId == _userId) {
+      _showSnack('Kendi mesajını şikayet edemezsin.');
+      return;
+    }
+
+    final result = await showReportBlockSheet(
+      context: context,
+      targetLabel: 'Forum mesajı',
+    );
+    if (result == null) return;
+
+    try {
+      await ModerationService.reportContent(
+        contentType: 'forum_post',
+        contentId: post.id,
+        contentOwnerId: post.authorId,
+        reason: result.reason,
+        contentPreview: post.body,
+      );
+
+      if (result.blockAuthor) {
+        await ModerationService.blockUser(
+          blockedUserId: post.authorId,
+          reason: result.reason,
+          sourceType: 'forum_post',
+          sourceId: post.id,
+        );
+        setState(() {
+          _blockedUserIds.add(post.authorId);
+          _posts.removeWhere((p) => p.authorId == post.authorId);
+        });
+      }
+
+      _showSnack(result.blockAuthor
+          ? 'Şikayet alındı ve kullanıcı engellendi.'
+          : 'Şikayet alındı. 24 saat içinde incelenecek.');
+    } catch (e) {
+      _showSnack('Şikayet gönderilemedi: $e');
     }
   }
 
@@ -292,15 +369,13 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                             Text(
                               '${_formatDate(_topic!.createdAt)} tarihinde açıldı',
                               style: TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.textSecondary),
+                                  fontSize: 12, color: AppColors.textSecondary),
                             ),
                             // Starter body
                             if (_topic!.starterBody?.trim().isNotEmpty ==
                                 true) ...[
                               const SizedBox(height: 12),
-                              _StarterBodyCard(
-                                  body: _topic!.starterBody!),
+                              _StarterBodyCard(body: _topic!.starterBody!),
                             ],
                             const SizedBox(height: 16),
                             // Posts
@@ -319,29 +394,25 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                               )
                             else
                               ..._posts.map((post) => Padding(
-                                    padding:
-                                        const EdgeInsets.only(bottom: 12),
+                                    padding: const EdgeInsets.only(bottom: 12),
                                     child: _PostCard(
                                       post: post,
-                                      parentPost:
-                                          post.parentPostId != null
-                                              ? _postsById[
-                                                  post.parentPostId!]
-                                              : null,
-                                      isEditing:
-                                          _editingPostId == post.id,
+                                      parentPost: post.parentPostId != null
+                                          ? _postsById[post.parentPostId!]
+                                          : null,
+                                      isEditing: _editingPostId == post.id,
                                       editController: _editController,
                                       savingEdit: _savingEdit,
-                                      canEdit:
-                                          post.canEdit(_userId),
+                                      canEdit: post.canEdit(_userId),
                                       canParticipate: _canParticipate,
-                                      onReply: () => setState(
-                                          () => _replyToPost = post),
-                                      onBeginEdit: () =>
-                                          _beginEdit(post),
+                                      canReport: _userId != null &&
+                                          post.authorId != _userId,
+                                      onReply: () =>
+                                          setState(() => _replyToPost = post),
+                                      onBeginEdit: () => _beginEdit(post),
                                       onCancelEdit: _cancelEdit,
-                                      onSaveEdit: () =>
-                                          _saveEdit(post),
+                                      onSaveEdit: () => _saveEdit(post),
+                                      onReport: () => _reportPost(post),
                                     ),
                                   )),
                           ],
@@ -354,8 +425,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                       replyToPost: _replyToPost,
                       controller: _replyController,
                       sending: _sendingReply,
-                      onClearReply: () =>
-                          setState(() => _replyToPost = null),
+                      onClearReply: () => setState(() => _replyToPost = null),
                       onSend: _sendReply,
                     ),
                   ],
@@ -389,8 +459,7 @@ class _StarterBodyCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: const Color(0xFFDCFCE7),
                   borderRadius: BorderRadius.circular(20),
@@ -407,8 +476,7 @@ class _StarterBodyCard extends StatelessWidget {
               const SizedBox(width: 8),
               Text(
                 'Sabit bilgilendirme',
-                style: TextStyle(
-                    fontSize: 11, color: AppColors.textSecondary),
+                style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
               ),
             ],
           ),
@@ -432,10 +500,12 @@ class _PostCard extends StatelessWidget {
   final bool savingEdit;
   final bool canEdit;
   final bool canParticipate;
+  final bool canReport;
   final VoidCallback onReply;
   final VoidCallback onBeginEdit;
   final VoidCallback onCancelEdit;
   final VoidCallback onSaveEdit;
+  final VoidCallback onReport;
 
   const _PostCard({
     required this.post,
@@ -445,10 +515,12 @@ class _PostCard extends StatelessWidget {
     required this.savingEdit,
     required this.canEdit,
     required this.canParticipate,
+    required this.canReport,
     required this.onReply,
     required this.onBeginEdit,
     required this.onCancelEdit,
     required this.onSaveEdit,
+    required this.onReport,
   });
 
   @override
@@ -469,8 +541,7 @@ class _PostCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: isAdmin
                       ? const Color(0xFFF0FDF4)
@@ -501,8 +572,7 @@ class _PostCard extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: const Color(0xFFDCFCE7),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                              color: const Color(0xFF86EFAC)),
+                          border: Border.all(color: const Color(0xFF86EFAC)),
                         ),
                         child: Text(
                           post.authorAdminRole == 'super_admin'
@@ -522,8 +592,7 @@ class _PostCard extends StatelessWidget {
               const SizedBox(width: 8),
               Text(
                 _formatDate(post.createdAt),
-                style: TextStyle(
-                    fontSize: 11, color: AppColors.textSecondary),
+                style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
               ),
             ],
           ),
@@ -540,8 +609,7 @@ class _PostCard extends StatelessWidget {
               ),
               child: Text(
                 '@${parentPost!.authorName} mesajına yanıt',
-                style: TextStyle(
-                    fontSize: 11, color: AppColors.textSecondary),
+                style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
               ),
             ),
           ],
@@ -599,6 +667,20 @@ class _PostCard extends StatelessWidget {
                     label: 'Yanıtla',
                     onTap: onReply,
                   ),
+                if (canReport) ...[
+                  const Spacer(),
+                  IconButton(
+                    tooltip: 'Şikayet et veya engelle',
+                    onPressed: onReport,
+                    icon: const Icon(Icons.more_horiz, size: 20),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
+                  ),
+                ],
               ],
             ),
           ],
@@ -661,8 +743,7 @@ class _ReplyBar extends StatelessWidget {
             Container(
               width: double.infinity,
               margin: const EdgeInsets.only(bottom: 6),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
                 color: const Color(0xFFF8FAFC),
                 borderRadius: BorderRadius.circular(8),

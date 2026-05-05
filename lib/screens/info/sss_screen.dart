@@ -17,8 +17,8 @@ const _items = [
   ),
   _FaqItem(
     'Evlumba\'yı kullanmak ücretli mi?',
-    'Temel kullanıcı akışları ücretsizdir. Platform içinde sunulan bazı profesyonel '
-        'hizmetler veya ek özellikler ileride ücretli olabilir.',
+    'iOS uygulamasındaki keşif, kayıt, mesajlaşma, portföy ve forum akışları ücretsizdir. '
+        'Uygulama içinde dijital içerik, abonelik veya ücretli özellik satışı bulunmaz.',
   ),
   _FaqItem(
     'Nasıl hesap açabilirim?',
@@ -102,9 +102,8 @@ class _FaqCardState extends State<_FaqCard> {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: _expanded
-                          ? AppColors.primary
-                          : AppColors.textPrimary,
+                      color:
+                          _expanded ? AppColors.primary : AppColors.textPrimary,
                     ),
                   ),
                 ),

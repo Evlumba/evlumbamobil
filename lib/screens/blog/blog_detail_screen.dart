@@ -4,13 +4,25 @@ import 'package:go_router/go_router.dart';
 import '../../core/supabase_client.dart';
 import '../../core/theme.dart';
 import '../../models/blog.dart';
+import '../../services/moderation_service.dart';
+import '../../widgets/report_block_sheet.dart';
 import '../../widgets/smart_image.dart';
 import 'html_content_widget.dart';
 
 String _formatDate(DateTime dt) {
   const months = [
-    'Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz',
-    'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara',
+    'Oca',
+    'Şub',
+    'Mar',
+    'Nis',
+    'May',
+    'Haz',
+    'Tem',
+    'Ağu',
+    'Eyl',
+    'Eki',
+    'Kas',
+    'Ara',
   ];
   return '${dt.day} ${months[dt.month - 1]} ${dt.year}';
 }
@@ -30,6 +42,7 @@ class _BlogDetailScreenState extends State<BlogDetailScreen> {
   List<BlogComment> _comments = [];
 
   String? _userId;
+  Set<String> _blockedUserIds = <String>{};
   bool _liked = false;
   int _likeCount = 0;
   bool _likeLoading = false;
@@ -52,6 +65,9 @@ class _BlogDetailScreenState extends State<BlogDetailScreen> {
   Future<void> _loadAll() async {
     setState(() => _loading = true);
     _userId = supabase.auth.currentUser?.id;
+    _blockedUserIds = _userId == null
+        ? <String>{}
+        : await ModerationService.loadBlockedUserIds();
 
     try {
       await _loadPost();
@@ -93,8 +109,7 @@ class _BlogDetailScreenState extends State<BlogDetailScreen> {
         .select('post_id')
         .eq('post_id', _post!.id);
 
-    final results =
-        await Future.wait<dynamic>([profileFuture, likesFuture]);
+    final results = await Future.wait<dynamic>([profileFuture, likesFuture]);
 
     final profile = results[0] as Map<String, dynamic>?;
     final likesData = results[1] as List;
@@ -128,8 +143,10 @@ class _BlogDetailScreenState extends State<BlogDetailScreen> {
         .eq('post_id', postId)
         .order('created_at', ascending: true);
 
-    final rawComments =
-        (data as List).map((j) => BlogComment.fromJson(j)).toList();
+    final rawComments = (data as List)
+        .map((j) => BlogComment.fromJson(j))
+        .where((comment) => !_blockedUserIds.contains(comment.userId))
+        .toList();
 
     // Fetch profiles for comment authors
     final userIds = rawComments.map((c) => c.userId).toSet().toList();
@@ -222,6 +239,11 @@ class _BlogDetailScreenState extends State<BlogDetailScreen> {
       _showSnack('Yorum boş olamaz.');
       return;
     }
+    final moderation = ModerationService.validateText(body);
+    if (!moderation.isAllowed) {
+      _showSnack(moderation.message!);
+      return;
+    }
 
     setState(() => _commentSending = true);
 
@@ -240,6 +262,52 @@ class _BlogDetailScreenState extends State<BlogDetailScreen> {
         setState(() => _commentSending = false);
         _showSnack('Hata: $e');
       }
+    }
+  }
+
+  Future<void> _reportComment(BlogComment comment) async {
+    if (_userId == null) {
+      context.push('/login');
+      return;
+    }
+    if (comment.userId == _userId) {
+      _showSnack('Kendi yorumunu şikayet edemezsin.');
+      return;
+    }
+
+    final result = await showReportBlockSheet(
+      context: context,
+      targetLabel: 'Blog yorumu',
+    );
+    if (result == null) return;
+
+    try {
+      await ModerationService.reportContent(
+        contentType: 'blog_comment',
+        contentId: comment.id,
+        contentOwnerId: comment.userId,
+        reason: result.reason,
+        contentPreview: comment.body,
+      );
+
+      if (result.blockAuthor) {
+        await ModerationService.blockUser(
+          blockedUserId: comment.userId,
+          reason: result.reason,
+          sourceType: 'blog_comment',
+          sourceId: comment.id,
+        );
+        setState(() {
+          _blockedUserIds.add(comment.userId);
+          _comments.removeWhere((c) => c.userId == comment.userId);
+        });
+      }
+
+      _showSnack(result.blockAuthor
+          ? 'Şikayet alındı ve kullanıcı engellendi.'
+          : 'Şikayet alındı. 24 saat içinde incelenecek.');
+    } catch (e) {
+      _showSnack('Şikayet gönderilemedi: $e');
     }
   }
 
@@ -354,13 +422,17 @@ class _BlogDetailScreenState extends State<BlogDetailScreen> {
                             Text(
                               'Henüz yorum yok. İlk yorumu sen bırak.',
                               style: TextStyle(
-                                  fontSize: 13,
-                                  color: AppColors.textSecondary),
+                                  fontSize: 13, color: AppColors.textSecondary),
                             )
                           else
                             ..._comments.map((c) => Padding(
                                   padding: const EdgeInsets.only(bottom: 10),
-                                  child: _CommentCard(comment: c),
+                                  child: _CommentCard(
+                                    comment: c,
+                                    canReport:
+                                        _userId != null && c.userId != _userId,
+                                    onReport: () => _reportComment(c),
+                                  ),
                                 )),
                           const SizedBox(height: 12),
                           // Comment input
@@ -383,8 +455,7 @@ class _BlogDetailScreenState extends State<BlogDetailScreen> {
                                       width: 18,
                                       height: 18,
                                       child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white),
+                                          strokeWidth: 2, color: Colors.white),
                                     )
                                   : const Text('Yorum Gönder'),
                             ),
@@ -439,19 +510,19 @@ class _AuthorBar extends StatelessWidget {
               color: const Color(0xFFE2E8F0),
             ),
             clipBehavior: Clip.hardEdge,
-            child: post.authorAvatarUrl != null &&
-                    post.authorAvatarUrl!.isNotEmpty
-                ? SmartImage(url: post.authorAvatarUrl, fit: BoxFit.cover)
-                : Center(
-                    child: Text(
-                      _initials(post.authorName),
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textSecondary,
+            child:
+                post.authorAvatarUrl != null && post.authorAvatarUrl!.isNotEmpty
+                    ? SmartImage(url: post.authorAvatarUrl, fit: BoxFit.cover)
+                    : Center(
+                        child: Text(
+                          _initials(post.authorName),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -467,8 +538,8 @@ class _AuthorBar extends StatelessWidget {
                 ),
                 Text(
                   _formatDate(post.publishedAt ?? post.createdAt),
-                  style: TextStyle(
-                      fontSize: 11, color: AppColors.textSecondary),
+                  style:
+                      TextStyle(fontSize: 11, color: AppColors.textSecondary),
                 ),
               ],
             ),
@@ -477,17 +548,12 @@ class _AuthorBar extends StatelessWidget {
           GestureDetector(
             onTap: likeLoading ? null : onToggleLike,
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: liked
-                    ? const Color(0xFFFFF1F2)
-                    : Colors.white,
+                color: liked ? const Color(0xFFFFF1F2) : Colors.white,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                  color: liked
-                      ? const Color(0xFFFDA4AF)
-                      : AppColors.border,
+                  color: liked ? const Color(0xFFFDA4AF) : AppColors.border,
                 ),
               ),
               child: Row(
@@ -496,8 +562,9 @@ class _AuthorBar extends StatelessWidget {
                   Icon(
                     liked ? Icons.favorite : Icons.favorite_border,
                     size: 16,
-                    color:
-                        liked ? const Color(0xFFE11D48) : AppColors.textSecondary,
+                    color: liked
+                        ? const Color(0xFFE11D48)
+                        : AppColors.textSecondary,
                   ),
                   const SizedBox(width: 4),
                   Text(
@@ -534,8 +601,14 @@ class _AuthorBar extends StatelessWidget {
 
 class _CommentCard extends StatelessWidget {
   final BlogComment comment;
+  final bool canReport;
+  final VoidCallback onReport;
 
-  const _CommentCard({required this.comment});
+  const _CommentCard({
+    required this.comment,
+    required this.canReport,
+    required this.onReport,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -600,8 +673,7 @@ class _CommentCard extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: const Color(0xFFDCFCE7),
                           borderRadius: BorderRadius.circular(8),
-                          border:
-                              Border.all(color: const Color(0xFF86EFAC)),
+                          border: Border.all(color: const Color(0xFF86EFAC)),
                         ),
                         child: Text(
                           comment.adminRole == 'super_admin'
@@ -620,9 +692,20 @@ class _CommentCard extends StatelessWidget {
               ),
               Text(
                 _formatDate(comment.createdAt),
-                style: TextStyle(
-                    fontSize: 10, color: AppColors.textSecondary),
+                style: TextStyle(fontSize: 10, color: AppColors.textSecondary),
               ),
+              if (canReport)
+                IconButton(
+                  tooltip: 'Şikayet et veya engelle',
+                  onPressed: onReport,
+                  icon: const Icon(Icons.more_horiz, size: 18),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 28,
+                    minHeight: 28,
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 8),
