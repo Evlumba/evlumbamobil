@@ -120,56 +120,43 @@ class _DesignersScreenState extends State<DesignersScreen> {
     });
 
     try {
-      final profilesData = await supabase
-          .from('profiles')
-          .select(
-            'id, full_name, role, avatar_url, business_name, specialty, city, about, cover_photo_url, tags, starting_from, created_at',
-          )
-          .inFilter('role', ['designer', 'designer_pending'])
-          .order('created_at', ascending: false);
+      // Fetch profiles and ranking (aggregates + score) in parallel
+      final results = await Future.wait([
+        supabase
+            .from('profiles')
+            .select(
+              'id, full_name, role, avatar_url, business_name, specialty, city, about, cover_photo_url, tags, starting_from, created_at',
+            )
+            .inFilter('role', ['designer', 'designer_pending']),
+        supabase.rpc('get_ranked_designers', params: {
+          'p_limit': 10000,
+          'p_offset': 0,
+        }),
+      ]);
 
-      final profiles = (profilesData as List)
+      final profiles = (results[0] as List)
           .map((e) => Profile.fromJson(e as Map<String, dynamic>))
           .toList();
 
-      // Fetch review counts and project counts in parallel
-      final designerDataList = await Future.wait(
-        profiles.map((profile) async {
-          try {
-            final reviewsResult = await supabase
-                .from('designer_reviews')
-                .select('id, rating')
-                .eq('designer_id', profile.id);
+      final rankingMap = <String, Map<String, dynamic>>{};
+      for (final row in (results[1] as List)) {
+        final map = row as Map<String, dynamic>;
+        final id = map['designer_id'] as String?;
+        if (id != null) rankingMap[id] = map;
+      }
 
-            final reviews = reviewsResult as List;
-            final reviewCount = reviews.length;
-            final avgRating = reviewCount > 0
-                ? reviews
-                        .map((r) =>
-                            (r as Map<String, dynamic>)['rating'] as num? ?? 0)
-                        .reduce((a, b) => a + b) /
-                    reviewCount
-                : 0.0;
-
-            final projectsResult = await supabase
-                .from('designer_projects')
-                .select('id')
-                .eq('designer_id', profile.id)
-                .eq('is_published', true);
-
-            final projectCount = (projectsResult as List).length;
-
-            return _DesignerData(
-              profile: profile,
-              rating: avgRating.toDouble(),
-              reviewCount: reviewCount,
-              projectCount: projectCount as int,
-            );
-          } catch (_) {
-            return _DesignerData(profile: profile);
-          }
-        }),
-      );
+      final designerDataList = profiles.map((profile) {
+        final r = rankingMap[profile.id];
+        if (r == null) return _DesignerData(profile: profile);
+        return _DesignerData(
+          profile: profile,
+          rating: (r['avg_rating'] as num?)?.toDouble() ?? 0.0,
+          reviewCount: (r['review_count'] as num?)?.toInt() ?? 0,
+          projectCount: (r['project_count'] as num?)?.toInt() ?? 0,
+          score: (r['score'] as num?)?.toDouble() ?? 0.0,
+        );
+      }).toList()
+        ..sort((a, b) => b.score.compareTo(a.score));
 
       // Filtre seçeneklerini çıkar
       final specialties = designerDataList
@@ -335,12 +322,14 @@ class _DesignerData {
   final double rating;
   final int reviewCount;
   final int projectCount;
+  final double score;
 
   _DesignerData({
     required this.profile,
     this.rating = 0,
     this.reviewCount = 0,
     this.projectCount = 0,
+    this.score = 0,
   });
 }
 
@@ -425,7 +414,7 @@ class _FilterSheetState extends State<_FilterSheet> {
             const Text('Şehir', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
-              value: _city,
+              initialValue: _city,
               isExpanded: true,
               decoration: InputDecoration(
                 hintText: 'Tümü',
@@ -445,7 +434,7 @@ class _FilterSheetState extends State<_FilterSheet> {
             const Text('Uzmanlık', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
-              value: _specialty,
+              initialValue: _specialty,
               isExpanded: true,
               decoration: InputDecoration(
                 hintText: 'Tümü',
@@ -466,7 +455,7 @@ class _FilterSheetState extends State<_FilterSheet> {
               contentPadding: EdgeInsets.zero,
               title: const Text('Yalnızca Doğrulanmış', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
               value: _verified,
-              activeColor: AppColors.primary,
+              activeThumbColor: AppColors.primary,
               onChanged: (v) => setState(() => _verified = v),
             ),
             const SizedBox(height: 8),
