@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -37,6 +39,7 @@ GoRouter buildRouter() {
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/splash',
+    refreshListenable: _SupabaseAuthRefreshListenable(),
     redirect: (context, state) {
       final session = Supabase.instance.client.auth.currentSession;
       final isLoggedIn = session != null;
@@ -255,4 +258,20 @@ GoRouter buildRouter() {
       ),
     ],
   );
+}
+
+class _SupabaseAuthRefreshListenable extends ChangeNotifier {
+  late final StreamSubscription<AuthState> _subscription;
+
+  _SupabaseAuthRefreshListenable() {
+    _subscription = Supabase.instance.client.auth.onAuthStateChange.listen((_) {
+      notifyListeners();
+    });
+  }
+
+  @override
+  void dispose() {
+    _subscription.cancel();
+    super.dispose();
+  }
 }
