@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/supabase_client.dart';
 import '../../core/theme.dart';
+import '../../services/account_service.dart';
 
 const _kPrimary = Color(0xFF0E5A3A);
 
@@ -43,6 +44,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   bool _obscureCurrent = true;
   bool _obscureNew = true;
   bool _obscureConfirm = true;
+  bool _deletingAccount = false;
 
   // professional
   bool _upgradeLoading = false;
@@ -58,9 +60,18 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   @override
   void dispose() {
     for (final c in [
-      _nameCtrl, _cityCtrl, _emailCtrl, _phoneCtrl, _addressCtrl,
-      _websiteCtrl, _instagramCtrl, _facebookCtrl, _linkedinCtrl,
-      _currentPwCtrl, _newPwCtrl, _confirmPwCtrl,
+      _nameCtrl,
+      _cityCtrl,
+      _emailCtrl,
+      _phoneCtrl,
+      _addressCtrl,
+      _websiteCtrl,
+      _instagramCtrl,
+      _facebookCtrl,
+      _linkedinCtrl,
+      _currentPwCtrl,
+      _newPwCtrl,
+      _confirmPwCtrl,
     ]) {
       c.dispose();
     }
@@ -75,7 +86,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       _userId = user.id;
       final data = await supabase
           .from('profiles')
-          .select('full_name, role, city, phone, contact_email, address, website, instagram, facebook, linkedin')
+          .select(
+              'full_name, role, city, phone, contact_email, address, website, instagram, facebook, linkedin')
           .eq('id', user.id)
           .maybeSingle();
       if (data != null && mounted) {
@@ -95,7 +107,10 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   }
 
   Future<void> _saveGeneral() async {
-    setState(() { _saving = true; _message = null; });
+    setState(() {
+      _saving = true;
+      _message = null;
+    });
     try {
       await supabase.from('profiles').update({
         'full_name': _nameCtrl.text.trim(),
@@ -110,7 +125,10 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   }
 
   Future<void> _saveContact() async {
-    setState(() { _saving = true; _message = null; });
+    setState(() {
+      _saving = true;
+      _message = null;
+    });
     try {
       await supabase.from('profiles').update({
         'contact_email': _emailCtrl.text.trim(),
@@ -145,10 +163,14 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       setState(() => _message = 'Şifre en az 6 karakter olmalı.');
       return;
     }
-    setState(() { _saving = true; _message = null; });
+    setState(() {
+      _saving = true;
+      _message = null;
+    });
     try {
       final authEmail = supabase.auth.currentUser?.email ?? '';
-      final verify = await supabase.auth.signInWithPassword(email: authEmail, password: current);
+      final verify = await supabase.auth
+          .signInWithPassword(email: authEmail, password: current);
       if (verify.user == null) {
         setState(() => _message = 'Mevcut şifre hatalı.');
         return;
@@ -165,8 +187,113 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     }
   }
 
+  Future<void> _deleteAccount() async {
+    if (_deletingAccount) return;
+
+    final email = supabase.auth.currentUser?.email ?? '';
+    final confirmed = await _showDeleteAccountDialog(email);
+    if (confirmed != true) return;
+
+    setState(() {
+      _deletingAccount = true;
+      _message = null;
+    });
+
+    try {
+      await AccountService.deleteCurrentAccount();
+      try {
+        await supabase.auth.signOut();
+      } catch (_) {}
+
+      if (!mounted) return;
+      context.go('/login');
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('Hesabınız kalıcı olarak silindi.')),
+        );
+    } catch (e) {
+      if (mounted) setState(() => _message = e.toString());
+    } finally {
+      if (mounted) setState(() => _deletingAccount = false);
+    }
+  }
+
+  Future<bool?> _showDeleteAccountDialog(String email) {
+    final controller = TextEditingController();
+
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final normalized = controller.text
+                .trim()
+                .replaceAll('İ', 'I')
+                .replaceAll('ı', 'i')
+                .toUpperCase();
+            final canDelete = normalized == 'SIL';
+
+            return AlertDialog(
+              title: const Text('Hesabı Sil'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Bu işlem hesabınızı, profil bilgilerinizi ve kayıtlı verilerinizi kalıcı olarak siler. Geri alınamaz.',
+                    style: TextStyle(fontSize: 13, height: 1.45),
+                  ),
+                  if (email.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      email,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: controller,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    textCapitalization: TextCapitalization.characters,
+                    decoration: const InputDecoration(
+                      labelText: 'Onay için SIL yazın',
+                      prefixIcon: Icon(Icons.warning_amber_outlined),
+                    ),
+                    onChanged: (_) => setDialogState(() {}),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('İptal'),
+                ),
+                TextButton(
+                  onPressed: canDelete
+                      ? () => Navigator.pop(dialogContext, true)
+                      : null,
+                  style: TextButton.styleFrom(foregroundColor: AppColors.error),
+                  child: const Text('Hesabı Sil'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    ).whenComplete(controller.dispose);
+  }
+
   Future<void> _upgradeToProfessional() async {
-    setState(() { _upgradeLoading = true; _message = null; });
+    setState(() {
+      _upgradeLoading = true;
+      _message = null;
+    });
     try {
       final session = supabase.auth.currentSession;
       if (session == null) {
@@ -182,9 +309,13 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         body: jsonEncode({}),
       );
       if (res.statusCode == 200) {
-        setState(() { _role = 'designer'; _message = 'Profesyonel hesap aktif edildi ✓'; });
+        setState(() {
+          _role = 'designer';
+          _message = 'Profesyonel hesap aktif edildi ✓';
+        });
       } else {
-        setState(() => _message = 'Hesap güncellenemedi. (${res.statusCode}: ${res.body})');
+        setState(() => _message =
+            'Hesap güncellenemedi. (${res.statusCode}: ${res.body})');
       }
     } catch (e) {
       if (mounted) setState(() => _message = 'Hata: $e');
@@ -195,10 +326,14 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
 
   String get _title {
     switch (widget.tab) {
-      case 'contact': return 'İletişim';
-      case 'security': return 'Güvenlik';
-      case 'professional': return 'Profesyonel Ol';
-      default: return 'Genel';
+      case 'contact':
+        return 'İletişim';
+      case 'security':
+        return 'Güvenlik';
+      case 'professional':
+        return 'Profesyonel Ol';
+      default:
+        return 'Genel';
     }
   }
 
@@ -232,7 +367,9 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                       child: Text(
                         _message!,
                         style: TextStyle(
-                          color: _message!.contains('✓') ? _kPrimary : AppColors.error,
+                          color: _message!.contains('✓')
+                              ? _kPrimary
+                              : AppColors.error,
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
                         ),
@@ -246,51 +383,85 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   }
 
   List<Widget> _buildGeneral() => [
-    _Field(label: 'Ad Soyad', controller: _nameCtrl),
-    const SizedBox(height: 14),
-    _Field(label: 'Şehir', controller: _cityCtrl),
-    const SizedBox(height: 24),
-    _SaveButton(saving: _saving, onPressed: _saveGeneral),
-  ];
+        _Field(label: 'Ad Soyad', controller: _nameCtrl),
+        const SizedBox(height: 14),
+        _Field(label: 'Şehir', controller: _cityCtrl),
+        const SizedBox(height: 24),
+        _SaveButton(saving: _saving, onPressed: _saveGeneral),
+      ];
 
   List<Widget> _buildContact() => [
-    _Field(label: 'İletişim E-posta', controller: _emailCtrl, keyboard: TextInputType.emailAddress),
-    const SizedBox(height: 14),
-    _Field(label: 'Telefon', controller: _phoneCtrl, keyboard: TextInputType.phone),
-    const SizedBox(height: 14),
-    _Field(label: 'Adres', controller: _addressCtrl),
-    const SizedBox(height: 14),
-    _Field(label: 'Website', controller: _websiteCtrl, keyboard: TextInputType.url),
-    const SizedBox(height: 14),
-    _Field(label: 'Instagram', controller: _instagramCtrl, prefix: '@'),
-    const SizedBox(height: 14),
-    _Field(label: 'Facebook', controller: _facebookCtrl),
-    const SizedBox(height: 14),
-    _Field(label: 'LinkedIn', controller: _linkedinCtrl),
-    const SizedBox(height: 24),
-    _SaveButton(saving: _saving, onPressed: _saveContact),
-  ];
+        _Field(
+            label: 'İletişim E-posta',
+            controller: _emailCtrl,
+            keyboard: TextInputType.emailAddress),
+        const SizedBox(height: 14),
+        _Field(
+            label: 'Telefon',
+            controller: _phoneCtrl,
+            keyboard: TextInputType.phone),
+        const SizedBox(height: 14),
+        _Field(label: 'Adres', controller: _addressCtrl),
+        const SizedBox(height: 14),
+        _Field(
+            label: 'Website',
+            controller: _websiteCtrl,
+            keyboard: TextInputType.url),
+        const SizedBox(height: 14),
+        _Field(label: 'Instagram', controller: _instagramCtrl, prefix: '@'),
+        const SizedBox(height: 14),
+        _Field(label: 'Facebook', controller: _facebookCtrl),
+        const SizedBox(height: 14),
+        _Field(label: 'LinkedIn', controller: _linkedinCtrl),
+        const SizedBox(height: 24),
+        _SaveButton(saving: _saving, onPressed: _saveContact),
+      ];
 
   List<Widget> _buildSecurity() => [
-    _PasswordField(label: 'Mevcut Şifre', controller: _currentPwCtrl, obscure: _obscureCurrent, onToggle: () => setState(() => _obscureCurrent = !_obscureCurrent)),
-    const SizedBox(height: 14),
-    _PasswordField(label: 'Yeni Şifre', controller: _newPwCtrl, obscure: _obscureNew, onToggle: () => setState(() => _obscureNew = !_obscureNew)),
-    const SizedBox(height: 14),
-    _PasswordField(label: 'Yeni Şifre (Tekrar)', controller: _confirmPwCtrl, obscure: _obscureConfirm, onToggle: () => setState(() => _obscureConfirm = !_obscureConfirm)),
-    const SizedBox(height: 24),
-    _SaveButton(saving: _saving, onPressed: _changePassword, label: 'Şifreyi Güncelle'),
-  ];
+        _PasswordField(
+            label: 'Mevcut Şifre',
+            controller: _currentPwCtrl,
+            obscure: _obscureCurrent,
+            onToggle: () => setState(() => _obscureCurrent = !_obscureCurrent)),
+        const SizedBox(height: 14),
+        _PasswordField(
+            label: 'Yeni Şifre',
+            controller: _newPwCtrl,
+            obscure: _obscureNew,
+            onToggle: () => setState(() => _obscureNew = !_obscureNew)),
+        const SizedBox(height: 14),
+        _PasswordField(
+            label: 'Yeni Şifre (Tekrar)',
+            controller: _confirmPwCtrl,
+            obscure: _obscureConfirm,
+            onToggle: () => setState(() => _obscureConfirm = !_obscureConfirm)),
+        const SizedBox(height: 24),
+        _SaveButton(
+            saving: _saving,
+            onPressed: _changePassword,
+            label: 'Şifreyi Güncelle'),
+        const SizedBox(height: 32),
+        _DeleteAccountButton(
+          deleting: _deletingAccount,
+          onPressed: _deleteAccount,
+        ),
+      ];
 
   List<Widget> _buildProfessional() {
     if (_role == 'designer' || _role == 'designer_pending') {
       return [
         Container(
           padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(color: _kPrimary.withOpacity(0.07), borderRadius: BorderRadius.circular(16)),
+          decoration: BoxDecoration(
+              color: _kPrimary.withOpacity(0.07),
+              borderRadius: BorderRadius.circular(16)),
           child: const Row(children: [
             Icon(Icons.check_circle_rounded, color: _kPrimary, size: 24),
             SizedBox(width: 12),
-            Expanded(child: Text('Hesabında profesyonel modülü aktif!', style: TextStyle(fontWeight: FontWeight.w600, color: _kPrimary))),
+            Expanded(
+                child: Text('Hesabında profesyonel modülü aktif!',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w600, color: _kPrimary))),
           ]),
         ),
       ];
@@ -299,16 +470,24 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Colors.white, borderRadius: BorderRadius.circular(20),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: _kPrimary.withOpacity(0.2)),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 4))],
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 12,
+                offset: const Offset(0, 4))
+          ],
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Profesyonel hesaba geç', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+          const Text('Profesyonel hesaba geç',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
           const Text(
             'Portföyünü öne çıkar, mesaj ve teklif akışına sahip ol.',
-            style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5),
+            style: TextStyle(
+                fontSize: 13, color: AppColors.textSecondary, height: 1.5),
           ),
           const SizedBox(height: 16),
           _Chip('Portföy vitrini ile daha fazla görünürlük'),
@@ -326,11 +505,20 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
           style: ElevatedButton.styleFrom(
             backgroundColor: _kPrimary,
             padding: const EdgeInsets.symmetric(vertical: 16),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           ),
           child: _upgradeLoading
-              ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-              : const Text('Profesyonel Ol', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
+              ? const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white))
+              : const Text('Profesyonel Ol',
+                  style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white)),
         ),
       ),
     ];
@@ -341,12 +529,19 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Hesap Yükselt'),
-        content: const Text('Hesabın profesyonel hesaba dönüştürülecek. Onaylıyor musun?'),
+        content: const Text(
+            'Hesabın profesyonel hesaba dönüştürülecek. Onaylıyor musun?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('İptal')),
           TextButton(
-            onPressed: () { Navigator.pop(ctx, true); _upgradeToProfessional(); },
-            style: TextButton.styleFrom(foregroundColor: const Color(0xFF4F46E5)),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('İptal')),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx, true);
+              _upgradeToProfessional();
+            },
+            style:
+                TextButton.styleFrom(foregroundColor: const Color(0xFF4F46E5)),
             child: const Text('Onayla'),
           ),
         ],
@@ -363,12 +558,20 @@ class _Field extends StatelessWidget {
   final TextInputType? keyboard;
   final String? prefix;
 
-  const _Field({required this.label, required this.controller, this.keyboard, this.prefix});
+  const _Field(
+      {required this.label,
+      required this.controller,
+      this.keyboard,
+      this.prefix});
 
   @override
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+      Text(label,
+          style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary)),
       const SizedBox(height: 6),
       TextField(
         controller: controller,
@@ -377,10 +580,18 @@ class _Field extends StatelessWidget {
           prefixText: prefix,
           filled: true,
           fillColor: Colors.white,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.border)),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.border)),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF0E5A3A), width: 1.5)),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: AppColors.border)),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: AppColors.border)),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide:
+                  const BorderSide(color: Color(0xFF0E5A3A), width: 1.5)),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         ),
       ),
     ]);
@@ -393,12 +604,20 @@ class _PasswordField extends StatelessWidget {
   final bool obscure;
   final VoidCallback onToggle;
 
-  const _PasswordField({required this.label, required this.controller, required this.obscure, required this.onToggle});
+  const _PasswordField(
+      {required this.label,
+      required this.controller,
+      required this.obscure,
+      required this.onToggle});
 
   @override
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+      Text(label,
+          style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary)),
       const SizedBox(height: 6),
       TextField(
         controller: controller,
@@ -406,11 +625,25 @@ class _PasswordField extends StatelessWidget {
         decoration: InputDecoration(
           filled: true,
           fillColor: Colors.white,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.border)),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.border)),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF0E5A3A), width: 1.5)),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          suffixIcon: IconButton(icon: Icon(obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 20), onPressed: onToggle),
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: AppColors.border)),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: AppColors.border)),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide:
+                  const BorderSide(color: Color(0xFF0E5A3A), width: 1.5)),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          suffixIcon: IconButton(
+              icon: Icon(
+                  obscure
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                  size: 20),
+              onPressed: onToggle),
         ),
       ),
     ]);
@@ -422,7 +655,8 @@ class _SaveButton extends StatelessWidget {
   final VoidCallback onPressed;
   final String label;
 
-  const _SaveButton({required this.saving, required this.onPressed, this.label = 'Kaydet'});
+  const _SaveButton(
+      {required this.saving, required this.onPressed, this.label = 'Kaydet'});
 
   @override
   Widget build(BuildContext context) {
@@ -433,11 +667,59 @@ class _SaveButton extends StatelessWidget {
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFF0E5A3A),
           padding: const EdgeInsets.symmetric(vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
         child: saving
-            ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-            : Text(label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
+            ? const SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Colors.white))
+            : Text(label,
+                style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white)),
+      ),
+    );
+  }
+}
+
+class _DeleteAccountButton extends StatelessWidget {
+  final bool deleting;
+  final VoidCallback onPressed;
+
+  const _DeleteAccountButton({
+    required this.deleting,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: deleting ? null : onPressed,
+        icon: deleting
+            ? const SizedBox(
+                height: 18,
+                width: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.delete_forever_outlined),
+        label: Text(deleting ? 'Hesap siliniyor...' : 'Hesabı Sil'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.error,
+          side: const BorderSide(color: AppColors.error),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          textStyle: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ),
     );
   }
@@ -452,8 +734,12 @@ class _Chip extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.border)),
-      child: Text(text, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+      decoration: BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.border)),
+      child: Text(text,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
     );
   }
 }

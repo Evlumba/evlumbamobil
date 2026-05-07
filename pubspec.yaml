@@ -2,7 +2,7 @@ name: evlumba_mobile
 description: "Evlumba - Interior Design Platform Mobile App"
 publish_to: 'none'
 
-version: 1.0.22+24
+version: 1.0.23+25
 
 environment:
   sdk: ^3.5.0
