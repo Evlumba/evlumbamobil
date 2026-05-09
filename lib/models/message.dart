@@ -31,4 +31,23 @@ class Message {
   }
 
   bool get isRead => readAt != null;
+
+  Message copyWith({
+    String? id,
+    String? conversationId,
+    String? senderId,
+    String? body,
+    DateTime? readAt,
+    bool clearReadAt = false,
+    DateTime? createdAt,
+  }) {
+    return Message(
+      id: id ?? this.id,
+      conversationId: conversationId ?? this.conversationId,
+      senderId: senderId ?? this.senderId,
+      body: body ?? this.body,
+      readAt: clearReadAt ? null : readAt ?? this.readAt,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
 }

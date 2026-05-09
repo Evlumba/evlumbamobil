@@ -56,7 +56,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _fetchMessages() async {
-    setState(() => _loading = true);
+    if (_messages.isEmpty) setState(() => _loading = true);
     try {
       final blockedIds = await ModerationService.loadBlockedUserIds();
       final blockedOther = widget.otherPartyId != null &&
@@ -66,15 +66,10 @@ class _ChatScreenState extends State<ChatScreen> {
           .select('id, conversation_id, sender_id, body, read_at, created_at')
           .eq('conversation_id', widget.conversationId)
           .order('created_at', ascending: true);
-      setState(() {
-        _blockedOtherParty = blockedOther;
-        _messages = _visibleMessages(
-          (data as List)
-              .map((e) => Message.fromJson(e as Map<String, dynamic>))
-              .toList(),
-        );
-        _loading = false;
-      });
+      final messages = (data as List)
+          .map((e) => Message.fromJson(e as Map<String, dynamic>))
+          .toList();
+      _setMessages(messages, blockedOther: blockedOther, loading: false);
       _scrollToBottom();
     } catch (e) {
       setState(() => _loading = false);
@@ -89,8 +84,9 @@ class _ChatScreenState extends State<ChatScreen> {
         .order('created_at', ascending: true)
         .listen((data) {
           setState(() {
-            _messages =
-                _visibleMessages(data.map((e) => Message.fromJson(e)).toList());
+            _messages = _sortMessages(
+              _visibleMessages(data.map((e) => Message.fromJson(e)).toList()),
+            );
           });
           _scrollToBottom();
           _markMessagesAsRead();
@@ -103,6 +99,16 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       await supabase.rpc('mark_conversation_read', params: {
         'conversation_uuid': widget.conversationId,
+      });
+      if (!mounted) return;
+      final readAt = DateTime.now();
+      setState(() {
+        _messages = _messages
+            .map((message) =>
+                message.senderId == currentUser.id || message.readAt != null
+                    ? message
+                    : message.copyWith(readAt: readAt))
+            .toList();
       });
     } catch (_) {}
   }
@@ -124,11 +130,20 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() => _sending = true);
     _messageController.clear();
     try {
-      await supabase.from('messages').insert({
-        'conversation_id': widget.conversationId,
-        'sender_id': currentUser.id,
-        'body': body,
-      });
+      final inserted = await supabase
+          .from('messages')
+          .insert({
+            'conversation_id': widget.conversationId,
+            'sender_id': currentUser.id,
+            'body': body,
+          })
+          .select('id, conversation_id, sender_id, body, read_at, created_at')
+          .single();
+      final sentMessage = Message.fromJson(inserted);
+      if (mounted) {
+        _appendOrReplaceMessage(sentMessage);
+        _scrollToBottom();
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -139,6 +154,34 @@ class _ChatScreenState extends State<ChatScreen> {
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  void _setMessages(
+    List<Message> messages, {
+    bool? blockedOther,
+    bool? loading,
+  }) {
+    if (!mounted) return;
+    setState(() {
+      if (blockedOther != null) _blockedOtherParty = blockedOther;
+      _messages = _sortMessages(_visibleMessages(messages));
+      if (loading != null) _loading = loading;
+    });
+  }
+
+  void _appendOrReplaceMessage(Message message) {
+    if (!mounted) return;
+    setState(() {
+      _messages = _sortMessages([
+        for (final current in _messages)
+          if (current.id != message.id) current,
+        message,
+      ]);
+    });
+  }
+
+  List<Message> _sortMessages(List<Message> messages) {
+    return [...messages]..sort((a, b) => a.createdAt.compareTo(b.createdAt));
   }
 
   List<Message> _visibleMessages(List<Message> messages) {
