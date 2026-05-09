@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -170,6 +172,7 @@ class _BottomBar extends StatelessWidget {
               label: 'Mesajlar',
               isActive: currentVisualIndex == 3,
               onTap: () => onTap(3),
+              badge: const _UnreadMessageBadge(),
             ),
             _NavItem(
               icon: Icons.person_outline_rounded,
@@ -191,6 +194,7 @@ class _NavItem extends StatelessWidget {
   final String label;
   final bool isActive;
   final VoidCallback onTap;
+  final Widget? badge;
 
   const _NavItem({
     required this.icon,
@@ -198,6 +202,7 @@ class _NavItem extends StatelessWidget {
     required this.label,
     required this.isActive,
     required this.onTap,
+    this.badge,
   });
 
   @override
@@ -210,7 +215,18 @@ class _NavItem extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(isActive ? activeIcon : icon, color: color, size: 24),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(isActive ? activeIcon : icon, color: color, size: 24),
+                if (badge != null)
+                  Positioned(
+                    top: -8,
+                    right: -10,
+                    child: badge!,
+                  ),
+              ],
+            ),
             const SizedBox(height: 2),
             Text(
               label,
@@ -220,6 +236,154 @@ class _NavItem extends StatelessWidget {
                   fontWeight: isActive ? FontWeight.w600 : FontWeight.w400),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _UnreadMessageBadge extends StatefulWidget {
+  const _UnreadMessageBadge();
+
+  @override
+  State<_UnreadMessageBadge> createState() => _UnreadMessageBadgeState();
+}
+
+class _UnreadMessageBadgeState extends State<_UnreadMessageBadge>
+    with WidgetsBindingObserver {
+  final _supabase = Supabase.instance.client;
+  StreamSubscription<AuthState>? _authSubscription;
+  StreamSubscription<List<Map<String, dynamic>>>? _messageSubscription;
+  Timer? _refreshDebounce;
+  int _count = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _authSubscription = _supabase.auth.onAuthStateChange.listen((event) {
+      if (event.event == AuthChangeEvent.signedIn ||
+          event.event == AuthChangeEvent.tokenRefreshed ||
+          event.event == AuthChangeEvent.userUpdated) {
+        _startMessageListener();
+        unawaited(_refreshUnreadCount());
+      } else if (event.event == AuthChangeEvent.signedOut) {
+        _messageSubscription?.cancel();
+        _messageSubscription = null;
+        if (mounted) setState(() => _count = 0);
+      }
+    });
+    _startMessageListener();
+    unawaited(_refreshUnreadCount());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _refreshDebounce?.cancel();
+    _authSubscription?.cancel();
+    _messageSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refreshUnreadCount());
+    }
+  }
+
+  void _startMessageListener() {
+    if (_messageSubscription != null) return;
+    if (_supabase.auth.currentUser == null) return;
+
+    _messageSubscription = _supabase
+        .from('messages')
+        .stream(primaryKey: ['id']).listen((_) => _scheduleRefresh());
+  }
+
+  void _scheduleRefresh() {
+    _refreshDebounce?.cancel();
+    _refreshDebounce = Timer(
+      const Duration(milliseconds: 250),
+      () => unawaited(_refreshUnreadCount()),
+    );
+  }
+
+  Future<void> _refreshUnreadCount() async {
+    final currentUser = _supabase.auth.currentUser;
+    if (currentUser == null) {
+      if (mounted && _count != 0) setState(() => _count = 0);
+      return;
+    }
+
+    try {
+      final homeownerConvs = await _supabase
+          .from('conversations')
+          .select('id')
+          .eq('homeowner_id', currentUser.id);
+      final designerConvs = await _supabase
+          .from('conversations')
+          .select('id')
+          .eq('designer_id', currentUser.id);
+
+      final conversationIds = <String>{
+        for (final item in homeownerConvs as List)
+          if (item is Map && item['id'] is String) item['id'] as String,
+        for (final item in designerConvs as List)
+          if (item is Map && item['id'] is String) item['id'] as String,
+      }.toList();
+
+      if (conversationIds.isEmpty) {
+        if (mounted && _count != 0) setState(() => _count = 0);
+        return;
+      }
+
+      final unreadData = await _supabase
+          .from('messages')
+          .select('id')
+          .inFilter('conversation_id', conversationIds)
+          .neq('sender_id', currentUser.id)
+          .isFilter('read_at', null);
+      final nextCount = (unreadData as List).length;
+
+      if (mounted && nextCount != _count) {
+        setState(() => _count = nextCount);
+      }
+    } catch (_) {
+      // Badge uygulamanın ana navigasyonunu bozmasın; bir sonraki realtime
+      // event veya app resume ile tekrar denenecek.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_count <= 0) return const SizedBox.shrink();
+
+    final label = _count > 99 ? '99+' : '$_count';
+    return Container(
+      constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+      padding: const EdgeInsets.symmetric(horizontal: 5),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: const Color(0xFFE04848),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white, width: 1.5),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x26000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          height: 1,
         ),
       ),
     );
