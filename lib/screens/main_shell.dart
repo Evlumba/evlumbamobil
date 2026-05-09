@@ -3,18 +3,52 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/theme.dart';
+import '../services/search_filters.dart';
 
 const _kPrimary = Color(0xFF0E5A3A);
 
 class MainShell extends StatelessWidget {
   final StatefulNavigationShell navigationShell;
+  final Uri uri;
 
-  const MainShell({super.key, required this.navigationShell});
+  const MainShell({
+    super.key,
+    required this.navigationShell,
+    required this.uri,
+  });
 
   // Maps shell branch index (0–3) → visual nav index (0,1,3,4)
   int get _visualIndex {
     final b = navigationShell.currentIndex;
     return b < 2 ? b : b + 1;
+  }
+
+  bool get _hasRouteFilters {
+    final hasQuery = (uri.queryParameters['q'] ?? '').trim().isNotEmpty;
+    return hasQuery || SearchFilters.fromQuery(uri.queryParameters).hasAny;
+  }
+
+  Future<bool> _confirmFilterExit(BuildContext context) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Filtreler temizlenecek'),
+        content: const Text(
+          'Bu sayfadan çıkarsanız uyguladığınız filtreler temizlenecek. Emin misiniz?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Vazgeç'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Evet, çık'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   void _onTap(BuildContext context, int visualIndex) async {
@@ -31,8 +65,10 @@ class MainShell extends StatelessWidget {
           .eq('id', userId)
           .maybeSingle();
       final role = data?['role'] as String?;
-      final isDesigner = role == 'designer' || role == 'designer_pending' ||
-          role == 'admin' || role == 'super_admin';
+      final isDesigner = role == 'designer' ||
+          role == 'designer_pending' ||
+          role == 'admin' ||
+          role == 'super_admin';
       if (context.mounted) {
         if (isDesigner) {
           context.push('/panel/projects/new');
@@ -43,6 +79,14 @@ class MainShell extends StatelessWidget {
       return;
     }
     final branchIndex = visualIndex < 2 ? visualIndex : visualIndex - 1;
+    if (branchIndex != navigationShell.currentIndex && _hasRouteFilters) {
+      final confirmed = await _confirmFilterExit(context);
+      if (!confirmed || !context.mounted) return;
+      if (branchIndex == 0) {
+        context.go('/home');
+        return;
+      }
+    }
     navigationShell.goBranch(
       branchIndex,
       initialLocation: branchIndex == navigationShell.currentIndex,
@@ -54,8 +98,14 @@ class MainShell extends StatelessWidget {
     final isOnHome = navigationShell.currentIndex == 0;
     return PopScope(
       canPop: isOnHome,
-      onPopInvokedWithResult: (didPop, _) {
+      onPopInvokedWithResult: (didPop, _) async {
         if (!didPop) {
+          if (_hasRouteFilters) {
+            final confirmed = await _confirmFilterExit(context);
+            if (!confirmed || !context.mounted) return;
+            context.go('/home');
+            return;
+          }
           navigationShell.goBranch(0, initialLocation: false);
         }
       },
@@ -87,7 +137,8 @@ class _BottomBar extends StatelessWidget {
         color: Colors.white,
         border: Border(top: BorderSide(color: AppColors.border)),
         boxShadow: [
-          BoxShadow(color: Color(0x0A000000), blurRadius: 12, offset: Offset(0, -4)),
+          BoxShadow(
+              color: Color(0x0A000000), blurRadius: 12, offset: Offset(0, -4)),
         ],
       ),
       padding: EdgeInsets.only(bottom: bottomInset),
@@ -121,7 +172,10 @@ class _BottomBar extends StatelessWidget {
                       color: _kPrimary,
                       shape: BoxShape.circle,
                       boxShadow: [
-                        BoxShadow(color: Color(0x330E5A3A), blurRadius: 10, offset: Offset(0, 4)),
+                        BoxShadow(
+                            color: Color(0x330E5A3A),
+                            blurRadius: 10,
+                            offset: Offset(0, 4)),
                       ],
                     ),
                     child: const Icon(Icons.add, color: Colors.white, size: 28),
@@ -179,7 +233,10 @@ class _NavItem extends StatelessWidget {
             const SizedBox(height: 2),
             Text(
               label,
-              style: TextStyle(fontSize: 10, color: color, fontWeight: isActive ? FontWeight.w600 : FontWeight.w400),
+              style: TextStyle(
+                  fontSize: 10,
+                  color: color,
+                  fontWeight: isActive ? FontWeight.w600 : FontWeight.w400),
             ),
           ],
         ),

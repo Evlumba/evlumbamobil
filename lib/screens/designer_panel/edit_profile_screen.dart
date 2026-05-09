@@ -5,6 +5,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/supabase_client.dart';
 import '../../core/theme.dart';
 import '../../models/profile.dart';
+import '../../services/search_filters.dart';
+import '../../widgets/search_filter_sheet.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -17,18 +19,25 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   final _fullNameController = TextEditingController();
   final _businessNameController = TextEditingController();
-  final _specialtyController = TextEditingController();
-  final _cityController = TextEditingController();
   final _aboutController = TextEditingController();
   final _phoneController = TextEditingController();
   final _emailController = TextEditingController();
   final _websiteController = TextEditingController();
   final _instagramController = TextEditingController();
-  final _startingFromController = TextEditingController();
 
   bool _loading = true;
   bool _saving = false;
   Profile? _profile;
+  Map<String, dynamic> _aboutDetails = const {};
+  List<String> _professionalTypes = [];
+  List<String> _services = [];
+  List<String> _projectTypes = [];
+  List<String> _serviceAreas = [];
+  List<String> _styleExpertise = [];
+  List<String> _cities = [];
+  List<String> _serviceRegions = [];
+  List<String> _workingModels = [];
+  String? _startingBudget;
 
   @override
   void initState() {
@@ -40,14 +49,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   void dispose() {
     _fullNameController.dispose();
     _businessNameController.dispose();
-    _specialtyController.dispose();
-    _cityController.dispose();
     _aboutController.dispose();
     _phoneController.dispose();
     _emailController.dispose();
     _websiteController.dispose();
     _instagramController.dispose();
-    _startingFromController.dispose();
     super.dispose();
   }
 
@@ -59,24 +65,36 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       final data = await supabase
           .from('profiles')
           .select(
-            'id, full_name, role, avatar_url, business_name, specialty, city, about, phone, contact_email, website, instagram, cover_photo_url, tags, starting_from, created_at',
+            'id, full_name, role, avatar_url, business_name, specialty, city, about, phone, contact_email, website, instagram, cover_photo_url, tags, starting_from, about_details, created_at',
           )
           .eq('id', currentUser.id)
           .maybeSingle();
 
       if (data != null) {
-        final profile = Profile.fromJson(data as Map<String, dynamic>);
+        final profile = Profile.fromJson(data);
         _profile = profile;
+        _aboutDetails =
+            Map<String, dynamic>.from(data['about_details'] as Map? ?? {});
         _fullNameController.text = profile.fullName ?? '';
         _businessNameController.text = profile.businessName ?? '';
-        _specialtyController.text = profile.specialty ?? '';
-        _cityController.text = profile.city ?? '';
         _aboutController.text = profile.about ?? '';
         _phoneController.text = profile.phone ?? '';
         _emailController.text = profile.contactEmail ?? '';
         _websiteController.text = profile.website ?? '';
         _instagramController.text = profile.instagram ?? '';
-        _startingFromController.text = profile.startingFrom ?? '';
+        _professionalTypes = [...profile.professionalTypes];
+        _services = [...profile.services];
+        _projectTypes = [...profile.projectTypes];
+        _serviceAreas = [...profile.serviceAreas];
+        _styleExpertise = [...profile.styleExpertise];
+        _cities = profile.cities.isNotEmpty
+            ? [...profile.cities]
+            : [
+                if ((profile.city ?? '').trim().isNotEmpty) profile.city!.trim()
+              ];
+        _serviceRegions = [...profile.serviceRegions];
+        _workingModels = [...profile.workingModels];
+        _startingBudget = profile.startingBudget;
       }
     } catch (e) {
       // ignore
@@ -87,12 +105,33 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
+    if (!_validateGeneralSelections()) return;
     final currentUser = supabase.auth.currentUser;
     if (currentUser == null) return;
 
     setState(() => _saving = true);
 
     try {
+      final profileGeneral = <String, dynamic>{
+        'displayName': _fullNameController.text.trim(),
+        if (_businessNameController.text.trim().isNotEmpty)
+          'businessName': _businessNameController.text.trim(),
+        if (_profile?.avatarUrl != null) 'profileImageUrl': _profile!.avatarUrl,
+        'professionalTypes': _professionalTypes,
+        'services': _services,
+        'projectTypes': _projectTypes,
+        'serviceAreas': _serviceAreas,
+        'styleExpertise': _styleExpertise,
+        'city': _cities.isNotEmpty ? _cities.first : null,
+        'cities': _cities,
+        'serviceRegions': _serviceRegions,
+        if (_startingBudget != null) 'startingBudget': _startingBudget,
+        'workingModels': _workingModels,
+        'tags': _profile?.tags ?? const <String>[],
+      };
+      final nextAboutDetails = Map<String, dynamic>.from(_aboutDetails)
+        ..['profileGeneral'] = profileGeneral;
+
       await supabase.from('profiles').upsert({
         'id': currentUser.id,
         'full_name': _fullNameController.text.trim().isEmpty
@@ -101,15 +140,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         'business_name': _businessNameController.text.trim().isEmpty
             ? null
             : _businessNameController.text.trim(),
-        'specialty': _specialtyController.text.trim().isEmpty
-            ? null
-            : _specialtyController.text.trim(),
-        'city': _cityController.text.trim().isEmpty
-            ? null
-            : _cityController.text.trim(),
+        'specialty':
+            _professionalTypes.isEmpty ? null : _professionalTypes.join(' • '),
+        'city': _cities.isEmpty ? null : _cities.first,
         'about': _aboutController.text.trim().isEmpty
             ? null
             : _aboutController.text.trim(),
+        'about_details': nextAboutDetails,
         'phone': _phoneController.text.trim().isEmpty
             ? null
             : _phoneController.text.trim(),
@@ -122,9 +159,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         'instagram': _instagramController.text.trim().isEmpty
             ? null
             : _instagramController.text.trim(),
-        'starting_from': _startingFromController.text.trim().isEmpty
-            ? null
-            : _startingFromController.text.trim(),
+        'starting_from': _startingBudget,
       });
 
       if (mounted) {
@@ -152,6 +187,28 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
+  bool _validateGeneralSelections() {
+    final missing = <String>[];
+    if (_fullNameController.text.trim().length < 2) {
+      missing.add('Ad / Profil adı');
+    }
+    if (_professionalTypes.isEmpty) missing.add('Profesyonel Türü');
+    if (_services.isEmpty) missing.add('Hizmetler');
+    if (_projectTypes.isEmpty) missing.add('Proje Tipleri');
+    if (_serviceAreas.isEmpty) missing.add('Hizmet Alanları');
+    if (_cities.isEmpty) missing.add('Şehir');
+    if (_serviceRegions.isEmpty) missing.add('Hizmet Bölgeleri');
+
+    if (missing.isEmpty) return true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Zorunlu alanları tamamlayın: ${missing.join(', ')}'),
+        backgroundColor: AppColors.error,
+      ),
+    );
+    return false;
+  }
+
   Future<void> _pickAndUploadAvatar() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(
@@ -173,17 +230,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       final path = 'avatars/${currentUser.id}.$ext';
 
       await supabase.storage.from('avatars').uploadBinary(
-        path,
-        bytes,
-        fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
-      );
+            path,
+            bytes,
+            fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
+          );
 
       final url = supabase.storage.from('avatars').getPublicUrl(path);
 
       await supabase
           .from('profiles')
-          .update({'avatar_url': url})
-          .eq('id', currentUser.id);
+          .update({'avatar_url': url}).eq('id', currentUser.id);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -284,7 +340,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     const SizedBox(height: 12),
                     _buildTextField(
                       controller: _fullNameController,
-                      label: 'Ad Soyad',
+                      label: 'Tam Ad / Profil Adı *',
                       icon: Icons.person_outlined,
                     ),
                     const SizedBox(height: 12),
@@ -294,19 +350,79 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       icon: Icons.business_outlined,
                     ),
                     const SizedBox(height: 12),
-                    _buildTextField(
-                      controller: _specialtyController,
-                      label: 'Uzmanlık / Unvan',
-                      hint: 'ör. İç Mimar, Dekorasyon Uzmanı',
-                      icon: Icons.work_outlined,
+                    SearchMultiSelectSection(
+                      title: 'Profesyonel Türü *',
+                      selectedValues: _professionalTypes,
+                      options: SearchFilters.professionalOptions,
+                      initiallyExpanded: _professionalTypes.isEmpty,
+                      onToggle: (value) => setState(() {
+                        _professionalTypes = _toggle(_professionalTypes, value);
+                        if (_professionalTypes.length > 3) {
+                          _professionalTypes =
+                              _professionalTypes.take(3).toList();
+                        }
+                      }),
                     ),
                     const SizedBox(height: 12),
-                    _buildTextField(
-                      controller: _cityController,
-                      label: 'Şehir',
-                      icon: Icons.location_city_outlined,
+                    SearchMultiSelectSection(
+                      title: 'Hizmetler *',
+                      selectedValues: _services,
+                      options: SearchFilters.serviceOptions,
+                      onToggle: (value) => setState(
+                        () => _services = _toggle(_services, value),
+                      ),
+                      onSetValues: (values) =>
+                          setState(() => _services = values),
                     ),
-                    const SizedBox(height: 12),
+                    SearchMultiSelectSection(
+                      title: 'Proje Tipleri *',
+                      selectedValues: _projectTypes,
+                      options: SearchFilters.projectTypeOptions,
+                      onToggle: (value) => setState(
+                        () => _projectTypes = _toggle(_projectTypes, value),
+                      ),
+                      onSetValues: (values) =>
+                          setState(() => _projectTypes = values),
+                    ),
+                    SearchMultiSelectSection(
+                      title: 'Hizmet Alanları *',
+                      selectedValues: _serviceAreas,
+                      options: SearchFilters.roomOptions,
+                      onToggle: (value) => setState(
+                        () => _serviceAreas = _toggle(_serviceAreas, value),
+                      ),
+                      onSetValues: (values) =>
+                          setState(() => _serviceAreas = values),
+                    ),
+                    SearchMultiSelectSection(
+                      title: 'Stil Uzmanlıkları',
+                      selectedValues: _styleExpertise,
+                      options: SearchFilters.styleOptions,
+                      onToggle: (value) => setState(
+                        () => _styleExpertise = _toggle(_styleExpertise, value),
+                      ),
+                      onSetValues: (values) =>
+                          setState(() => _styleExpertise = values),
+                    ),
+                    SearchMultiSelectSection(
+                      title: 'Şehir *',
+                      selectedValues: _cities,
+                      options: SearchFilters.cityOptions,
+                      onToggle: (value) => setState(
+                        () => _cities = _toggle(_cities, value),
+                      ),
+                      onSetValues: (values) => setState(() => _cities = values),
+                    ),
+                    SearchMultiSelectSection(
+                      title: 'Hizmet Bölgeleri *',
+                      selectedValues: _serviceRegions,
+                      options: SearchFilters.serviceRegionOptions,
+                      onToggle: (value) => setState(
+                        () => _serviceRegions = _toggle(_serviceRegions, value),
+                      ),
+                      onSetValues: (values) =>
+                          setState(() => _serviceRegions = values),
+                    ),
                     TextFormField(
                       controller: _aboutController,
                       maxLines: 4,
@@ -355,11 +471,45 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     const SizedBox(height: 24),
                     _SectionHeader(title: 'Hizmet Bilgileri'),
                     const SizedBox(height: 12),
-                    _buildTextField(
-                      controller: _startingFromController,
-                      label: 'Başlangıç Fiyatı',
-                      hint: 'ör. ₺₺, ₺₺₺, 5000₺\'den başlayan',
-                      icon: Icons.attach_money_outlined,
+                    DropdownButtonFormField<String>(
+                      initialValue: _startingBudget,
+                      decoration: const InputDecoration(
+                        labelText: 'Başlangıç Bütçesi',
+                        prefixIcon: Icon(Icons.attach_money_outlined),
+                      ),
+                      items: [
+                        const DropdownMenuItem<String>(
+                          value: null,
+                          child: Text('Seçilmedi'),
+                        ),
+                        ...SearchFilters.startingBudgetOptions.map(
+                          (value) => DropdownMenuItem(
+                            value: value,
+                            child: Text(value),
+                          ),
+                        ),
+                      ],
+                      onChanged: (value) =>
+                          setState(() => _startingBudget = value),
+                    ),
+                    const SizedBox(height: 12),
+                    SearchMultiSelectSection(
+                      title: 'Çalışma Modeli',
+                      selectedValues: _workingModels,
+                      options: const [
+                        'Ücretsiz Ön Görüşme',
+                        'Saatlik Danışmanlık',
+                        'Proje Bazlı Ücret',
+                        'm² Bazlı Ücret',
+                        'Paket Hizmet',
+                        'Anahtar Teslim',
+                        'Teklif Üzerinden',
+                      ],
+                      onToggle: (value) => setState(
+                        () => _workingModels = _toggle(_workingModels, value),
+                      ),
+                      onSetValues: (values) =>
+                          setState(() => _workingModels = values),
                     ),
 
                     const SizedBox(height: 32),
@@ -385,6 +535,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               ),
             ),
     );
+  }
+
+  List<String> _toggle(List<String> values, String value) {
+    return values.contains(value)
+        ? values.where((item) => item != value).toList()
+        : [...values, value];
   }
 
   Widget _buildTextField({

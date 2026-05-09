@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -5,16 +7,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/supabase_client.dart';
 import '../../core/theme.dart';
 import '../../models/designer_project.dart';
+import '../../services/search_filters.dart';
 
 const List<String> _projectTypes = [
-  'Oturma Odası',
-  'Mutfak',
-  'Banyo',
-  'Yatak Odası',
-  'Çocuk Odası',
-  'Ofis',
-  'Antre',
-  'Bahçe',
+  ...SearchFilters.roomOptions,
   'Diğer',
 ];
 
@@ -129,13 +125,13 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
             'projects/${currentUser.id}/${DateTime.now().millisecondsSinceEpoch}.$ext';
 
         await supabase.storage.from('project-images').uploadBinary(
-          path,
-          bytes,
-          fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
-        );
+              path,
+              bytes,
+              fileOptions:
+                  const FileOptions(cacheControl: '3600', upsert: true),
+            );
 
-        final url =
-            supabase.storage.from('project-images').getPublicUrl(path);
+        final url = supabase.storage.from('project-images').getPublicUrl(path);
         setState(() => _uploadedImageUrls.add(url));
       } catch (e) {
         // Continue uploading remaining images
@@ -166,9 +162,8 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
             : _descriptionController.text.trim(),
         'budget_level': _budgetLevel,
         'is_published': _isPublished,
-        'cover_image_url': _uploadedImageUrls.isNotEmpty
-            ? _uploadedImageUrls.first
-            : null,
+        'cover_image_url':
+            _uploadedImageUrls.isNotEmpty ? _uploadedImageUrls.first : null,
       };
 
       String projectId;
@@ -184,7 +179,7 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
             .insert(projectData)
             .select('id')
             .single();
-        projectId = (result as Map<String, dynamic>)['id'] as String;
+        projectId = result['id'] as String;
       }
 
       // Upsert project images
@@ -198,15 +193,17 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
         }
 
         await supabase.from('designer_project_images').insert(
-          _uploadedImageUrls.asMap().entries.map((e) {
-            return {
-              'project_id': projectId,
-              'image_url': e.value,
-              'sort_order': e.key,
-            };
-          }).toList(),
-        );
+              _uploadedImageUrls.asMap().entries.map((e) {
+                return {
+                  'project_id': projectId,
+                  'image_url': e.value,
+                  'sort_order': e.key,
+                };
+              }).toList(),
+            );
       }
+
+      unawaited(_syncProjectSearchEmbedding(projectId));
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -233,6 +230,15 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
         setState(() => _saving = false);
       }
     }
+  }
+
+  Future<void> _syncProjectSearchEmbedding(String projectId) async {
+    try {
+      await supabase.functions.invoke(
+        'sync-search-embeddings',
+        body: {'projectId': projectId},
+      );
+    } catch (_) {}
   }
 
   @override
@@ -279,8 +285,7 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
                         child: ListView.separated(
                           scrollDirection: Axis.horizontal,
                           itemCount: _uploadedImageUrls.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(width: 8),
+                          separatorBuilder: (_, __) => const SizedBox(width: 8),
                           itemBuilder: (context, index) {
                             return Stack(
                               children: [
@@ -338,9 +343,7 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
                             )
                           : const Icon(Icons.add_photo_alternate_outlined),
                       label: Text(
-                        _uploadingImages
-                            ? 'Yükleniyor...'
-                            : 'Fotoğraf Ekle',
+                        _uploadingImages ? 'Yükleniyor...' : 'Fotoğraf Ekle',
                       ),
                     ),
 
@@ -371,7 +374,7 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
                     const SizedBox(height: 12),
 
                     DropdownButtonFormField<String>(
-                      value: _projectType,
+                      initialValue: _projectType,
                       decoration: const InputDecoration(
                         labelText: 'Oda / Mekan Tipi',
                         prefixIcon: Icon(Icons.category_outlined),
@@ -397,7 +400,7 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
                     const SizedBox(height: 12),
 
                     DropdownButtonFormField<String>(
-                      value: _budgetLevel,
+                      initialValue: _budgetLevel,
                       decoration: const InputDecoration(
                         labelText: 'Bütçe Seviyesi',
                         prefixIcon: Icon(Icons.attach_money_outlined),
@@ -466,7 +469,7 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
                             value: _isPublished,
                             onChanged: (val) =>
                                 setState(() => _isPublished = val),
-                            activeColor: AppColors.primary,
+                            activeThumbColor: AppColors.primary,
                           ),
                         ],
                       ),

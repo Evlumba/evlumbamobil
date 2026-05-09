@@ -52,7 +52,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           .select('id, full_name, avatar_url')
           .eq('id', uid)
           .single();
-      if (mounted) setState(() => _currentUserProfile = Profile.fromJson(data as Map<String, dynamic>));
+      if (mounted) {
+        setState(() => _currentUserProfile = Profile.fromJson(data));
+      }
     } catch (_) {}
   }
 
@@ -93,7 +95,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     final uid = supabase.auth.currentUser?.id;
     if (uid == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Kaydetmek için giriş yapmalısın'), behavior: SnackBarBehavior.floating),
+        const SnackBar(
+            content: Text('Kaydetmek için giriş yapmalısın'),
+            behavior: SnackBarBehavior.floating),
       );
       return;
     }
@@ -131,7 +135,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     );
   }
 
-  Future<void> _toggleSaveInCollection(String? existingColId, String colName) async {
+  Future<void> _toggleSaveInCollection(
+      String? existingColId, String colName) async {
     final uid = supabase.auth.currentUser?.id;
     if (uid == null) return;
 
@@ -149,7 +154,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               .eq('design_id', widget.projectId)
               .maybeSingle();
           if (existing != null) {
-            await supabase.from('collection_items').delete().eq('id', existing['id']);
+            await supabase
+                .from('collection_items')
+                .delete()
+                .eq('id', existing['id']);
           }
           if (mounted) {
             setState(() {
@@ -186,7 +194,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   void _showSnack(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating, duration: const Duration(seconds: 2)),
+      SnackBar(
+          content: Text(msg),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2)),
     );
   }
 
@@ -203,7 +214,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           )
           .eq('id', widget.projectId)
           .single();
-      final project = DesignerProject.fromJson(data as Map<String, dynamic>);
+      final project = DesignerProject.fromJson(data);
       await _fetchDesigner(project.designerId);
       setState(() {
         _project = project;
@@ -219,7 +230,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             )
             .eq('id', widget.projectId)
             .single();
-        final project = DesignerProject.fromJson(data as Map<String, dynamic>);
+        final project = DesignerProject.fromJson(data);
         await _fetchDesigner(project.designerId);
         setState(() {
           _project = project;
@@ -240,11 +251,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       final data = await supabase
           .from('profiles')
           .select(
-            'id, full_name, business_name, avatar_url, specialty, city, role, created_at',
+            'id, full_name, business_name, avatar_url, specialty, city, role, about_details, tags, starting_from, created_at',
           )
           .eq('id', designerId)
           .single();
-      _designer = Profile.fromJson(data as Map<String, dynamic>);
+      _designer = Profile.fromJson(data);
     } catch (_) {}
   }
 
@@ -257,7 +268,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
   void _showShareSheet(DesignerProject project) {
     final link = 'https://www.evlumba.com/projects/${project.id}';
-    final text = '${project.title} - Evlumba\'da bu tasarım projesine göz at!\n$link';
+    final text =
+        '${project.title} - Evlumba\'da bu tasarım projesine göz at!\n$link';
 
     showModalBottomSheet(
       context: context,
@@ -294,8 +306,18 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
   String _formatDate(DateTime date) {
     const months = [
-      'Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz',
-      'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara',
+      'Oca',
+      'Şub',
+      'Mar',
+      'Nis',
+      'May',
+      'Haz',
+      'Tem',
+      'Ağu',
+      'Eyl',
+      'Eki',
+      'Kas',
+      'Ara',
     ];
     return '${date.day} ${months[date.month - 1]} ${date.year}';
   }
@@ -342,11 +364,14 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             child: CircleAvatar(
               radius: 16,
               backgroundColor: AppColors.border,
-              backgroundImage: avatarUrl != null && avatarUrl.isNotEmpty && !avatarUrl.startsWith('data:')
+              backgroundImage: avatarUrl != null &&
+                      avatarUrl.isNotEmpty &&
+                      !avatarUrl.startsWith('data:')
                   ? NetworkImage(avatarUrl)
                   : null,
               child: avatarUrl == null || avatarUrl.isEmpty
-                  ? const Icon(Icons.person, size: 18, color: AppColors.textSecondary)
+                  ? const Icon(Icons.person,
+                      size: 18, color: AppColors.textSecondary)
                   : null,
             ),
           ),
@@ -358,7 +383,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return Scaffold(appBar: _buildAppBar(), body: const Center(child: CircularProgressIndicator()));
+      return Scaffold(
+          appBar: _buildAppBar(),
+          body: const Center(child: CircularProgressIndicator()));
     }
 
     if (_error != null || _project == null) {
@@ -370,7 +397,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             children: [
               Text(_error ?? 'Proje bulunamadı.'),
               const SizedBox(height: 16),
-              ElevatedButton(onPressed: _fetchProject, child: const Text('Tekrar Dene')),
+              ElevatedButton(
+                  onPressed: _fetchProject, child: const Text('Tekrar Dene')),
             ],
           ),
         ),
@@ -379,14 +407,17 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
     final project = _project!;
     final allImages = project.images.isNotEmpty
-        ? project.images.map((i) => i.imageUrl).where((u) => u.isNotEmpty).toList()
+        ? project.images
+            .map((i) => i.imageUrl)
+            .where((u) => u.isNotEmpty)
+            .toList()
         : project.coverImageUrl != null
             ? [project.coverImageUrl!]
             : <String>[];
-    final currentImageUrl = allImages.isNotEmpty ? allImages[_currentImageIndex] : null;
-    final hotspots = project.shopLinks
-        .where((l) => l.imageUrl == currentImageUrl)
-        .toList();
+    final currentImageUrl =
+        allImages.isNotEmpty ? allImages[_currentImageIndex] : null;
+    final hotspots =
+        project.shopLinks.where((l) => l.imageUrl == currentImageUrl).toList();
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -400,12 +431,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // ── Main image carousel with hotspots ──
-              if (allImages.isNotEmpty)
-                _buildCarousel(allImages, hotspots),
+              if (allImages.isNotEmpty) _buildCarousel(allImages, hotspots),
 
               // ── Thumbnail strip ──
-              if (allImages.length > 1)
-                _buildThumbnailStrip(allImages),
+              if (allImages.length > 1) _buildThumbnailStrip(allImages),
 
               // ── Content ──
               Padding(
@@ -813,7 +842,9 @@ class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.only(
-          left: 24, right: 24, top: 20,
+          left: 24,
+          right: 24,
+          top: 20,
           bottom: MediaQuery.of(context).viewInsets.bottom + 24,
         ),
         child: Column(
@@ -821,13 +852,19 @@ class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
           children: [
             // Handle
             Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2)),
             ),
             const SizedBox(height: 20),
             const Text(
               'Koleksiyona Kaydet',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+              style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary),
             ),
             const SizedBox(height: 16),
 
@@ -838,10 +875,14 @@ class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
               final isSaved = widget.savedInIds.contains(id);
               return ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: Text(title, style: const TextStyle(fontSize: 15, color: AppColors.textPrimary)),
+                title: Text(title,
+                    style: const TextStyle(
+                        fontSize: 15, color: AppColors.textPrimary)),
                 trailing: isSaved
-                    ? const Icon(Icons.check_circle, color: AppColors.primary, size: 22)
-                    : const Icon(Icons.radio_button_unchecked, color: AppColors.border, size: 22),
+                    ? const Icon(Icons.check_circle,
+                        color: AppColors.primary, size: 22)
+                    : const Icon(Icons.radio_button_unchecked,
+                        color: AppColors.border, size: 22),
                 onTap: () => widget.onToggle(id, title),
               );
             }),
@@ -855,8 +896,10 @@ class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
                 autofocus: true,
                 decoration: InputDecoration(
                   hintText: 'Koleksiyon adı (ör. Mutfak, Banyo…)',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 ),
                 onSubmitted: (v) {
                   if (v.trim().isNotEmpty) widget.onCreateNew(v.trim());
@@ -874,10 +917,12 @@ class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
-                  child: const Text('Oluştur ve Kaydet', style: TextStyle(fontWeight: FontWeight.w600)),
+                  child: const Text('Oluştur ve Kaydet',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
                 ),
               ),
             ] else
@@ -1143,7 +1188,8 @@ class _ShopLinkOverlay extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                if (link.productPrice != null && link.productPrice!.isNotEmpty) ...[
+                if (link.productPrice != null &&
+                    link.productPrice!.isNotEmpty) ...[
                   const SizedBox(height: 2),
                   Text(
                     link.productPrice!,
@@ -1217,11 +1263,13 @@ class _DesignerMiniCard extends StatelessWidget {
                     border: Border.all(color: AppColors.border, width: 2),
                   ),
                   clipBehavior: Clip.hardEdge,
-                  child: designer.avatarUrl != null && designer.avatarUrl!.isNotEmpty
+                  child: designer.avatarUrl != null &&
+                          designer.avatarUrl!.isNotEmpty
                       ? SmartImage(url: designer.avatarUrl, fit: BoxFit.cover)
                       : Container(
                           color: AppColors.primary.withOpacity(0.1),
-                          child: const Icon(Icons.person, color: AppColors.primary, size: 28),
+                          child: const Icon(Icons.person,
+                              color: AppColors.primary, size: 28),
                         ),
                 ),
                 const SizedBox(width: 14),
@@ -1239,20 +1287,24 @@ class _DesignerMiniCard extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      if (designer.specialty != null && designer.specialty!.isNotEmpty) ...[
+                      if (designer.specialty != null &&
+                          designer.specialty!.isNotEmpty) ...[
                         const SizedBox(height: 2),
                         Text(
                           designer.specialty!,
-                          style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                          style: const TextStyle(
+                              fontSize: 13, color: AppColors.textSecondary),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ],
-                      if (designer.city != null && designer.city!.isNotEmpty) ...[
+                      if (designer.city != null &&
+                          designer.city!.isNotEmpty) ...[
                         const SizedBox(height: 2),
                         Text(
                           designer.city!,
-                          style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                          style: const TextStyle(
+                              fontSize: 13, color: AppColors.textSecondary),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -1266,7 +1318,8 @@ class _DesignerMiniCard extends StatelessWidget {
             Positioned(
               top: 0,
               right: 0,
-              child: Icon(Icons.auto_awesome, size: 16, color: AppColors.primary.withOpacity(0.7)),
+              child: Icon(Icons.auto_awesome,
+                  size: 16, color: AppColors.primary.withOpacity(0.7)),
             ),
           ],
         ),

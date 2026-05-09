@@ -1,116 +1,475 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/supabase_client.dart';
 import '../../core/theme.dart';
 import '../../models/profile.dart';
+import '../../services/search_filters.dart';
+import '../../services/search_intent_service.dart';
+import '../../services/semantic_search_service.dart';
+import '../../widgets/search_active_filter_chips.dart';
+import '../../widgets/search_filter_sheet.dart';
 import '../../widgets/designer_card.dart';
 import '../../widgets/shimmer_card.dart';
 
 class DesignersScreen extends StatefulWidget {
-  const DesignersScreen({super.key});
+  final String? initialQuery;
+  final SearchFilters initialFilters;
+
+  const DesignersScreen({
+    super.key,
+    this.initialQuery,
+    this.initialFilters = const SearchFilters(),
+  });
 
   @override
   State<DesignersScreen> createState() => _DesignersScreenState();
 }
 
 class _DesignersScreenState extends State<DesignersScreen> {
+  static const _searchHints = [
+    'istanbul iç mimar...',
+    'ankara boya ustası...',
+    'elektrikçi...',
+    'antalya mimar...',
+    'mutfak yenileme yapan...',
+    'banyo tadilat ustası...',
+  ];
+
   List<_DesignerData> _designers = [];
   List<_DesignerData> _filtered = [];
   bool _loading = true;
   String? _error;
   final _searchController = TextEditingController();
+  Timer? _searchDebounce;
+  Timer? _placeholderTimer;
+  String _animatedPlaceholder = '';
+  int _placeholderHintIndex = 0;
+  int _placeholderCharIndex = 0;
+  bool _placeholderDeleting = false;
+  int _searchRequestId = 0;
+  List<String>? _semanticDesignerIds;
+  bool _searching = false;
+  bool _leaveConfirmed = false;
 
-  // Filtre state
-  String? _selectedCity;
-  String? _selectedSpecialty;
-  bool _verifiedOnly = false;
+  SearchFilters _filters = const SearchFilters();
 
-  // Uzmanlık seçenekleri (veriden dinamik)
-  List<String> _availableSpecialties = [];
+  int get _activeFilterCount => _filters.activeCount;
+  int get _filterBadgeCount {
+    final count = _activeFilterCount - (_filters.sortBy.isNotEmpty ? 1 : 0);
+    return count < 0 ? 0 : count;
+  }
 
-  int get _activeFilterCount =>
-      (_selectedCity != null ? 1 : 0) +
-      (_selectedSpecialty != null ? 1 : 0) +
-      (_verifiedOnly ? 1 : 0);
+  bool get _hasSearchQuery => _searchController.text.trim().isNotEmpty;
+  bool get _shouldConfirmLeaving => _filters.hasAny || _hasSearchQuery;
 
   @override
   void initState() {
     super.initState();
+    _searchController.addListener(_onSearchChanged);
+    final initialQuery = widget.initialQuery?.trim();
+    if (initialQuery != null && initialQuery.isNotEmpty) {
+      _searchController.text = initialQuery;
+    }
+    _filters = widget.initialFilters;
+    _tickSearchPlaceholder();
     _fetchDesigners();
-    _searchController.addListener(_applyFilters);
+  }
+
+  @override
+  void didUpdateWidget(covariant DesignersScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextQuery = widget.initialQuery?.trim() ?? '';
+    final oldQuery = oldWidget.initialQuery?.trim() ?? '';
+    if (nextQuery != oldQuery && nextQuery != _searchController.text.trim()) {
+      _searchController.text = nextQuery;
+    }
+    final nextFilters = widget.initialFilters;
+    if (nextFilters != _filters) {
+      setState(() {
+        _filters = nextFilters;
+        _filtered = _filterDesigners(_designers);
+      });
+    }
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _placeholderTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
 
-  void _applyFilters() {
-    final query = _searchController.text.trim().toLowerCase();
+  void _tickSearchPlaceholder() {
+    final current = _searchHints[_placeholderHintIndex];
+    if (mounted) {
+      setState(() {
+        _animatedPlaceholder = current.substring(0, _placeholderCharIndex);
+      });
+    }
+
+    Duration delay;
+    if (!_placeholderDeleting && _placeholderCharIndex < current.length) {
+      _placeholderCharIndex++;
+      delay = const Duration(milliseconds: 70);
+    } else if (!_placeholderDeleting) {
+      _placeholderDeleting = true;
+      delay = const Duration(milliseconds: 1200);
+    } else if (_placeholderCharIndex > 0) {
+      _placeholderCharIndex--;
+      delay = const Duration(milliseconds: 34);
+    } else {
+      _placeholderDeleting = false;
+      _placeholderHintIndex = (_placeholderHintIndex + 1) % _searchHints.length;
+      delay = const Duration(milliseconds: 260);
+    }
+
+    _placeholderTimer = Timer(delay, _tickSearchPlaceholder);
+  }
+
+  void _onSearchChanged() {
+    _searchDebounce?.cancel();
+    final query = _searchController.text.trim();
+    final requestId = ++_searchRequestId;
+
     setState(() {
-      _filtered = _designers.where((d) {
-        // Arama
-        if (query.isNotEmpty) {
-          final name = d.profile.displayName.toLowerCase();
-          final specialty = (d.profile.specialty ?? '').toLowerCase();
-          final city = (d.profile.city ?? '').toLowerCase();
-          if (!name.contains(query) && !specialty.contains(query) && !city.contains(query)) {
-            return false;
-          }
-        }
-        // Şehir filtresi
-        if (_selectedCity != null) {
-          final city = (d.profile.city ?? '').trim();
-          if (city != _selectedCity) return false;
-        }
-        // Uzmanlık filtresi
-        if (_selectedSpecialty != null) {
-          final sp = (d.profile.specialty ?? '').toLowerCase();
-          if (!sp.contains(_selectedSpecialty!.toLowerCase())) return false;
-        }
-        // Doğrulanmış filtresi
-        if (_verifiedOnly) {
-          if (d.profile.role != 'designer') return false;
-        }
-        return true;
-      }).toList();
+      _semanticDesignerIds = null;
+      _searching = query.length >= 2;
+      _filtered = _filterDesigners(_designers);
+    });
+
+    if (query.length < 2) {
+      return;
+    }
+
+    _searchDebounce = Timer(const Duration(milliseconds: 420), () {
+      _runSemanticDesignerSearch(query, requestId);
     });
   }
 
-  void _showFilterSheet() {
-    showModalBottomSheet(
+  Future<void> _runSemanticDesignerSearch(String query, int requestId) async {
+    try {
+      final result = await SemanticSearchService.searchDesigners(
+        query: query,
+        professionalTypes: _filters.professionals,
+        services: _filters.services,
+        projectTypes: _filters.projectTypes,
+        serviceAreas: _filters.rooms,
+        cities: _filters.cities,
+        serviceRegions: _filters.serviceRegions,
+        hasProjects: _filters.hasProjects,
+        limit: 100,
+      );
+
+      if (!mounted || requestId != _searchRequestId) return;
+      setState(() {
+        _semanticDesignerIds = result.designerIds;
+        _searching = false;
+        _filtered = _filterDesigners(_designers);
+      });
+    } catch (_) {
+      if (!mounted || requestId != _searchRequestId) return;
+      setState(() {
+        _semanticDesignerIds = null;
+        _searching = false;
+        _filtered = _filterDesigners(_designers);
+      });
+    }
+  }
+
+  List<_DesignerData> _filterDesigners(List<_DesignerData> designers) {
+    final query = _searchController.text.trim().toLowerCase();
+    final ordered = _applySearchOrder(designers, query);
+
+    final filtered = ordered.where((d) {
+      if (_filters.cities.isNotEmpty) {
+        final cities = d.profile.cities.isNotEmpty
+            ? d.profile.cities
+            : [if ((d.profile.city ?? '').trim().isNotEmpty) d.profile.city!];
+        if (!_filters.cities.any(cities.contains)) return false;
+      }
+
+      if (_filters.professionals.isNotEmpty &&
+          !_filters.professionals.any(
+            (professional) => _matchesProfessionalFilter(d, professional),
+          )) {
+        return false;
+      }
+
+      if (_filters.services.isNotEmpty &&
+          !_filters.services.any(d.profile.services.contains)) {
+        return false;
+      }
+
+      if (_filters.projectTypes.isNotEmpty &&
+          !_filters.projectTypes.any(d.profile.projectTypes.contains)) {
+        return false;
+      }
+
+      if (_filters.rooms.isNotEmpty &&
+          !_filters.rooms.any(d.profile.serviceAreas.contains)) {
+        return false;
+      }
+
+      if (_filters.serviceRegions.isNotEmpty &&
+          !_filters.serviceRegions.any(d.profile.serviceRegions.contains)) {
+        return false;
+      }
+
+      if (_filters.hasProjects && d.projectCount < 1) {
+        return false;
+      }
+
+      return true;
+    }).toList();
+
+    return _applySelectedSort(filtered);
+  }
+
+  List<_DesignerData> _applySelectedSort(List<_DesignerData> designers) {
+    if (_filters.sortBy.isEmpty) return designers;
+
+    final sorted = List<_DesignerData>.from(designers);
+    switch (_filters.sortBy) {
+      case SearchFilters.sortName:
+        sorted.sort((a, b) {
+          final compare = a.profile.displayName
+              .toLowerCase()
+              .compareTo(b.profile.displayName.toLowerCase());
+          if (compare != 0) return compare;
+          return _compareDesignerDefault(a, b);
+        });
+        break;
+      case SearchFilters.sortBudget:
+        sorted.sort((a, b) {
+          final compare = SearchFilters.budgetRank(
+            a.profile.startingBudget ?? a.profile.startingFrom,
+          ).compareTo(
+            SearchFilters.budgetRank(
+              b.profile.startingBudget ?? b.profile.startingFrom,
+            ),
+          );
+          if (compare != 0) return compare;
+          return a.profile.displayName
+              .toLowerCase()
+              .compareTo(b.profile.displayName.toLowerCase());
+        });
+        break;
+      case SearchFilters.sortProjectCount:
+        sorted.sort((a, b) {
+          final compare = b.projectCount.compareTo(a.projectCount);
+          if (compare != 0) return compare;
+          return _compareDesignerDefault(a, b);
+        });
+        break;
+      case SearchFilters.sortRating:
+        sorted.sort((a, b) {
+          final compare = b.rating.compareTo(a.rating);
+          if (compare != 0) return compare;
+          final reviewCompare = b.reviewCount.compareTo(a.reviewCount);
+          if (reviewCompare != 0) return reviewCompare;
+          return _compareDesignerDefault(a, b);
+        });
+        break;
+    }
+    return sorted;
+  }
+
+  int _compareDesignerDefault(_DesignerData a, _DesignerData b) {
+    final scoreCompare = b.score.compareTo(a.score);
+    if (scoreCompare != 0) return scoreCompare;
+    return a.profile.displayName
+        .toLowerCase()
+        .compareTo(b.profile.displayName.toLowerCase());
+  }
+
+  List<_DesignerData> _applySearchOrder(
+    List<_DesignerData> designers,
+    String query,
+  ) {
+    if (query.isEmpty) return List<_DesignerData>.from(designers);
+
+    final localMatches =
+        designers.where((d) => _matchesProfileText(d, query)).toList()
+          ..sort((a, b) {
+            final scoreCompare = _profileSearchScore(b, query)
+                .compareTo(_profileSearchScore(a, query));
+            if (scoreCompare != 0) return scoreCompare;
+            return b.score.compareTo(a.score);
+          });
+
+    final semanticIds = _semanticDesignerIds;
+    if (semanticIds == null) {
+      return localMatches;
+    }
+
+    final order = {
+      for (var i = 0; i < semanticIds.length; i++) semanticIds[i]: i,
+    };
+    final localOrder = {
+      for (var i = 0; i < localMatches.length; i++)
+        localMatches[i].profile.id: i,
+    };
+    final matchedIds = {...order.keys, ...localOrder.keys};
+
+    final result =
+        designers.where((d) => matchedIds.contains(d.profile.id)).toList();
+
+    result.sort((a, b) {
+      final aLocalScore = _profileSearchScore(a, query);
+      final bLocalScore = _profileSearchScore(b, query);
+      if (aLocalScore != bLocalScore) {
+        return bLocalScore.compareTo(aLocalScore);
+      }
+
+      final aOrder = order[a.profile.id] ??
+          100000 + (localOrder[a.profile.id] ?? designers.indexOf(a));
+      final bOrder = order[b.profile.id] ??
+          100000 + (localOrder[b.profile.id] ?? designers.indexOf(b));
+      final semanticCompare = aOrder.compareTo(bOrder);
+      if (semanticCompare != 0) return semanticCompare;
+
+      return b.score.compareTo(a.score);
+    });
+
+    return result;
+  }
+
+  bool _matchesProfileText(_DesignerData d, String query) {
+    final normalizedQuery = SearchIntentService.normalize(query);
+    final tokens = SearchIntentService.queryTokens(query);
+    final profileText = _profileSearchText(d);
+
+    if (profileText.contains(normalizedQuery)) return true;
+    if (tokens.isEmpty) return true;
+    return tokens.every(profileText.contains);
+  }
+
+  int _profileSearchScore(_DesignerData d, String query) {
+    final tokens = SearchIntentService.queryTokens(query);
+    if (tokens.isEmpty) return 0;
+
+    final name = SearchIntentService.normalize(d.profile.displayName);
+    final specialty = SearchIntentService.normalize(d.profile.specialty ?? '');
+    final city = SearchIntentService.normalize(d.profile.city ?? '');
+    final profileText = _profileSearchText(d);
+    var score = 0;
+
+    for (final token in tokens) {
+      if (city.contains(token)) score += 8;
+      if (specialty.contains(token)) score += 7;
+      if (name.contains(token)) score += 5;
+      if (profileText.contains(token)) score += 2;
+    }
+
+    return score;
+  }
+
+  bool _matchesProfessionalFilter(_DesignerData d, String professional) {
+    final normalized = SearchIntentService.normalize(professional);
+    if (normalized == 'mimar' || normalized == 'tasarimci') {
+      return d.profile.isDesigner;
+    }
+
+    final tokens = SearchIntentService.queryTokens(professional);
+    if (d.profile.professionalTypes.contains(professional)) return true;
+    final specialtyText = SearchIntentService.normalize([
+      d.profile.specialty ?? '',
+      d.profile.about ?? '',
+      d.profile.tags.join(' '),
+      d.profile.professionalTypes.join(' '),
+    ].join(' '));
+
+    return tokens.every(specialtyText.contains);
+  }
+
+  String _profileSearchText(_DesignerData d) {
+    final roleWords = d.profile.isDesigner
+        ? 'mimar ic mimar tasarimci dekorator profesyonel uzman'
+        : '';
+
+    return SearchIntentService.normalize([
+      d.profile.displayName,
+      d.profile.businessName ?? '',
+      d.profile.specialty ?? '',
+      d.profile.city ?? '',
+      d.profile.about ?? '',
+      d.profile.tags.join(' '),
+      d.profile.professionalTypes.join(' '),
+      d.profile.services.join(' '),
+      d.profile.projectTypes.join(' '),
+      d.profile.serviceAreas.join(' '),
+      d.profile.styleExpertise.join(' '),
+      d.profile.serviceRegions.join(' '),
+      roleWords,
+    ].join(' '));
+  }
+
+  Future<void> _showFilterSheet({bool expandSort = false}) async {
+    final result = await showModalBottomSheet<SearchFilters>(
       context: context,
       backgroundColor: Colors.white,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => _FilterSheet(
-        availableSpecialties: _availableSpecialties,
-        selectedCity: _selectedCity,
-        selectedSpecialty: _selectedSpecialty,
-        verifiedOnly: _verifiedOnly,
-        onApply: (city, specialty, verified) {
-          setState(() {
-            _selectedCity = city;
-            _selectedSpecialty = specialty;
-            _verifiedOnly = verified;
-          });
-          _applyFilters();
-          Navigator.pop(context);
-        },
-        onClear: () {
-          setState(() {
-            _selectedCity = null;
-            _selectedSpecialty = null;
-            _verifiedOnly = false;
-          });
-          _applyFilters();
-          Navigator.pop(context);
-        },
+      builder: (_) => SearchFilterSheet(
+        filters: _filters,
+        mode: SearchFilterSheetMode.designers,
+        expandSort: expandSort,
       ),
     );
+
+    if (result == null || !mounted) return;
+    setState(() {
+      _filters = result;
+      _filtered = _filterDesigners(_designers);
+    });
+  }
+
+  Future<bool> _confirmFilterExit() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Filtreler temizlenecek'),
+        content: const Text(
+          'Bu sayfadan çıkarsanız uyguladığınız filtreler temizlenecek. Emin misiniz?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Vazgeç'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Evet, çık'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
+  Future<void> _handleFilteredPop() async {
+    final confirmed = await _confirmFilterExit();
+    if (!mounted || !confirmed) return;
+    _searchDebounce?.cancel();
+    _semanticDesignerIds = null;
+    _searching = false;
+    _searchController.clear();
+    setState(() {
+      _leaveConfirmed = true;
+      _filters = const SearchFilters();
+      _filtered = _filterDesigners(_designers);
+    });
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/home');
+    }
   }
 
   Future<void> _fetchDesigners() async {
@@ -125,7 +484,7 @@ class _DesignersScreenState extends State<DesignersScreen> {
         supabase
             .from('profiles')
             .select(
-              'id, full_name, role, avatar_url, business_name, specialty, city, about, cover_photo_url, tags, starting_from, created_at',
+              'id, full_name, role, avatar_url, business_name, specialty, city, about, cover_photo_url, tags, starting_from, about_details, created_at',
             )
             .inFilter('role', ['designer', 'designer_pending']),
         supabase.rpc('get_ranked_designers', params: {
@@ -158,18 +517,10 @@ class _DesignersScreenState extends State<DesignersScreen> {
       }).toList()
         ..sort((a, b) => b.score.compareTo(a.score));
 
-      // Filtre seçeneklerini çıkar
-      final specialties = designerDataList
-          .map((d) => (d.profile.specialty ?? '').trim())
-          .where((s) => s.isNotEmpty)
-          .toSet()
-          .toList()..sort();
-
       if (mounted) {
         setState(() {
           _designers = designerDataList;
-          _filtered = designerDataList;
-          _availableSpecialties = specialties;
+          _filtered = _filterDesigners(designerDataList);
           _loading = false;
         });
       }
@@ -185,134 +536,215 @@ class _DesignersScreenState extends State<DesignersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text('Tasarımcılar'),
-        actions: [
-          Stack(
-            alignment: Alignment.topRight,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.tune),
-                tooltip: 'Filtrele',
-                onPressed: _showFilterSheet,
-              ),
-              if (_activeFilterCount > 0)
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: Container(
-                    width: 16,
-                    height: 16,
-                    decoration: const BoxDecoration(
-                      color: AppColors.primary,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text(
-                        '$_activeFilterCount',
-                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                      ),
-                    ),
+    return PopScope(
+      canPop: !_shouldConfirmLeaving || _leaveConfirmed,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop || !_shouldConfirmLeaving || _leaveConfirmed) return;
+        _handleFilteredPop();
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          title: const Text('Tasarımcılar'),
+          actions: [
+            _DesignerAppBarAction(
+              icon: Icons.sort_rounded,
+              tooltip: 'Sırala',
+              active: _filters.sortBy.isNotEmpty,
+              onTap: () => _showFilterSheet(expandSort: true),
+            ),
+            _DesignerAppBarAction(
+              icon: Icons.tune_rounded,
+              tooltip: 'Filtrele',
+              active: _filterBadgeCount > 0,
+              badgeCount: _filterBadgeCount > 0 ? _filterBadgeCount : null,
+              onTap: () => _showFilterSheet(),
+            ),
+            const SizedBox(width: 8),
+          ],
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(60),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: _animatedPlaceholder.isEmpty
+                      ? 'istanbul iç mimar...'
+                      : _animatedPlaceholder,
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  suffixIcon: _searching
+                      ? const Padding(
+                          padding: EdgeInsets.all(14),
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, size: 18),
+                              onPressed: () => _searchController.clear(),
+                            )
+                          : null,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
                   ),
+                  isDense: true,
                 ),
-            ],
-          ),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(60),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'İsim, uzmanlık veya şehir ara...',
-                prefixIcon: const Icon(Icons.search, size: 20),
-                suffixIcon: _searchController.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 18),
-                        onPressed: () => _searchController.clear(),
-                      )
-                    : null,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                isDense: true,
               ),
             ),
           ),
         ),
+        body: _error != null
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      color: AppColors.textSecondary,
+                      size: 48,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      _error!,
+                      style: const TextStyle(color: AppColors.textSecondary),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: _fetchDesigners,
+                      child: const Text('Tekrar Dene'),
+                    ),
+                  ],
+                ),
+              )
+            : Column(
+                children: [
+                  if (_filters.hasProfessionalFilters)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                      child: SearchActiveFilterChips(
+                        filters: _filters,
+                        includeProjectFilters: false,
+                        onRemove: _removeFilter,
+                      ),
+                    ),
+                  Expanded(
+                    child: _loading
+                        ? ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: 5,
+                            itemBuilder: (_, __) => const Padding(
+                              padding: EdgeInsets.only(bottom: 12),
+                              child: ShimmerCard(height: 180),
+                            ),
+                          )
+                        : _filtered.isEmpty
+                            ? Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(
+                                      Icons.people_outline,
+                                      color: AppColors.textSecondary,
+                                      size: 64,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      _searchController.text.isNotEmpty
+                                          ? 'Arama sonucu bulunamadı.'
+                                          : 'Henüz tasarımcı yok.',
+                                      style: const TextStyle(
+                                          color: AppColors.textSecondary),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : RefreshIndicator(
+                                onRefresh: _fetchDesigners,
+                                child: ListView.builder(
+                                  padding: const EdgeInsets.all(16),
+                                  itemCount: _filtered.length,
+                                  itemBuilder: (context, index) {
+                                    final data = _filtered[index];
+                                    return DesignerCard(
+                                      designer: data.profile,
+                                      rating: data.rating,
+                                      reviewCount: data.reviewCount,
+                                      projectCount: data.projectCount,
+                                    );
+                                  },
+                                ),
+                              ),
+                  ),
+                ],
+              ),
       ),
-      body: _error != null
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(
-                    Icons.error_outline,
-                    color: AppColors.textSecondary,
-                    size: 48,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    _error!,
-                    style: const TextStyle(color: AppColors.textSecondary),
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: _fetchDesigners,
-                    child: const Text('Tekrar Dene'),
-                  ),
-                ],
+    );
+  }
+
+  void _removeFilter(String key, String value) {
+    setState(() {
+      _filters = _filters.removeValue(key, value);
+      _filtered = _filterDesigners(_designers);
+    });
+  }
+}
+
+class _DesignerAppBarAction extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final bool active;
+  final int? badgeCount;
+  final VoidCallback onTap;
+
+  const _DesignerAppBarAction({
+    required this.icon,
+    required this.tooltip,
+    required this.active,
+    required this.onTap,
+    this.badgeCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        IconButton(
+          tooltip: tooltip,
+          onPressed: onTap,
+          icon: Icon(
+            icon,
+            color: active ? AppColors.primary : AppColors.textSecondary,
+          ),
+        ),
+        if (badgeCount != null && badgeCount! > 0)
+          Positioned(
+            top: 7,
+            right: 7,
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              decoration: const BoxDecoration(
+                color: AppColors.primary,
+                shape: BoxShape.circle,
               ),
-            )
-          : _loading
-          ? ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: 5,
-              itemBuilder: (_, __) => const Padding(
-                padding: EdgeInsets.only(bottom: 12),
-                child: ShimmerCard(height: 180),
-              ),
-            )
-          : _filtered.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(
-                    Icons.people_outline,
-                    color: AppColors.textSecondary,
-                    size: 64,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    _searchController.text.isNotEmpty
-                        ? 'Arama sonucu bulunamadı.'
-                        : 'Henüz tasarımcı yok.',
-                    style: const TextStyle(color: AppColors.textSecondary),
-                  ),
-                ],
-              ),
-            )
-          : RefreshIndicator(
-              onRefresh: _fetchDesigners,
-              child: ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: _filtered.length,
-                itemBuilder: (context, index) {
-                  final data = _filtered[index];
-                  return DesignerCard(
-                    designer: data.profile,
-                    rating: data.rating,
-                    reviewCount: data.reviewCount,
-                    projectCount: data.projectCount,
-                  );
-                },
+              alignment: Alignment.center,
+              child: Text(
+                '$badgeCount',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
+          ),
+      ],
     );
   }
 }
@@ -331,152 +763,4 @@ class _DesignerData {
     this.projectCount = 0,
     this.score = 0,
   });
-}
-
-// ── Filter sheet ──────────────────────────────────────────────────────────────
-
-// Türkiye'nin 81 ili
-const _turkishCities = [
-  'Adana','Adıyaman','Afyonkarahisar','Ağrı','Amasya','Ankara','Antalya','Artvin',
-  'Aydın','Balıkesir','Bilecik','Bingöl','Bitlis','Bolu','Burdur','Bursa','Çanakkale',
-  'Çankırı','Çorum','Denizli','Diyarbakır','Edirne','Elazığ','Erzincan','Erzurum',
-  'Eskişehir','Gaziantep','Giresun','Gümüşhane','Hakkari','Hatay','Isparta','Mersin',
-  'İstanbul','İzmir','Kars','Kastamonu','Kayseri','Kırklareli','Kırşehir','Kocaeli',
-  'Konya','Kütahya','Malatya','Manisa','Kahramanmaraş','Mardin','Muğla','Muş',
-  'Nevşehir','Niğde','Ordu','Rize','Sakarya','Samsun','Siirt','Sinop','Sivas',
-  'Tekirdağ','Tokat','Trabzon','Tunceli','Şanlıurfa','Uşak','Van','Yozgat',
-  'Zonguldak','Aksaray','Bayburt','Karaman','Kırıkkale','Batman','Şırnak','Bartın',
-  'Ardahan','Iğdır','Yalova','Karabük','Kilis','Osmaniye','Düzce',
-];
-
-class _FilterSheet extends StatefulWidget {
-  final List<String> availableSpecialties;
-  final String? selectedCity;
-  final String? selectedSpecialty;
-  final bool verifiedOnly;
-  final void Function(String? city, String? specialty, bool verified) onApply;
-  final VoidCallback onClear;
-
-  const _FilterSheet({
-    required this.availableSpecialties,
-    required this.selectedCity,
-    required this.selectedSpecialty,
-    required this.verifiedOnly,
-    required this.onApply,
-    required this.onClear,
-  });
-
-  @override
-  State<_FilterSheet> createState() => _FilterSheetState();
-}
-
-class _FilterSheetState extends State<_FilterSheet> {
-  late String? _city;
-  late String? _specialty;
-  late bool _verified;
-
-  @override
-  void initState() {
-    super.initState();
-    _city = widget.selectedCity;
-    _specialty = widget.selectedSpecialty;
-    _verified = widget.verifiedOnly;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: 20, right: 20, top: 20,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Handle + Başlık
-            Center(
-              child: Container(width: 40, height: 4,
-                decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2))),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Filtreler', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-                TextButton(onPressed: widget.onClear, child: const Text('Temizle')),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Şehir
-            const Text('Şehir', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              initialValue: _city,
-              isExpanded: true,
-              decoration: InputDecoration(
-                hintText: 'Tümü',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                isDense: true,
-              ),
-              items: [
-                const DropdownMenuItem<String>(value: null, child: Text('Tümü')),
-                ..._turkishCities.map((c) => DropdownMenuItem(value: c, child: Text(c))),
-              ],
-              onChanged: (v) => setState(() => _city = v),
-            ),
-            const SizedBox(height: 16),
-
-            // Uzmanlık
-            const Text('Uzmanlık', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              initialValue: _specialty,
-              isExpanded: true,
-              decoration: InputDecoration(
-                hintText: 'Tümü',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                isDense: true,
-              ),
-              items: [
-                const DropdownMenuItem<String>(value: null, child: Text('Tümü')),
-                ...widget.availableSpecialties.map((s) => DropdownMenuItem(value: s, child: Text(s))),
-              ],
-              onChanged: (v) => setState(() => _specialty = v),
-            ),
-            const SizedBox(height: 16),
-
-            // Doğrulanmış
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Yalnızca Doğrulanmış', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-              value: _verified,
-              activeThumbColor: AppColors.primary,
-              onChanged: (v) => setState(() => _verified = v),
-            ),
-            const SizedBox(height: 8),
-
-            // Uygula
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => widget.onApply(_city, _specialty, _verified),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                child: const Text('Filtrele', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }

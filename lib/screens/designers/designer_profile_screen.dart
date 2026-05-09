@@ -70,7 +70,7 @@ class _DesignerProfileScreenState extends State<DesignerProfileScreen>
       final profileData = await supabase
           .from('profiles')
           .select(
-            'id, full_name, role, avatar_url, business_name, specialty, city, about, phone, contact_email, address, website, instagram, facebook, linkedin, cover_photo_url, tags, starting_from, response_time, created_at',
+            'id, full_name, role, avatar_url, business_name, specialty, city, about, phone, contact_email, address, website, instagram, facebook, linkedin, cover_photo_url, tags, starting_from, response_time, about_details, created_at',
           )
           .eq('id', widget.designerId)
           .maybeSingle();
@@ -784,6 +784,41 @@ class _AboutSection extends StatelessWidget {
           ),
           const SizedBox(height: 24),
         ],
+        if (_hasGeneralInfo) ...[
+          const Text(
+            'Genel Bilgiler',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _InfoWrap(
+              label: 'Profesyonel Türü', values: profile.professionalTypes),
+          _InfoWrap(label: 'Hizmetler', values: profile.services),
+          _InfoWrap(label: 'Proje Tipleri', values: profile.projectTypes),
+          _InfoWrap(label: 'Hizmet Alanları', values: profile.serviceAreas),
+          _InfoWrap(label: 'Stil Uzmanlığı', values: profile.styleExpertise),
+          _InfoWrap(label: 'Hizmet Bölgeleri', values: profile.serviceRegions),
+          if (profile.startingBudget != null &&
+              profile.startingBudget!.isNotEmpty)
+            _InfoWrap(
+                label: 'Başlangıç Bütçesi', values: [profile.startingBudget!]),
+          _InfoWrap(label: 'Çalışma Modeli', values: profile.workingModels),
+          if ((profile.city ?? '').isNotEmpty ||
+              (profile.district ?? '').isNotEmpty)
+            _InfoWrap(
+              label: 'Konum',
+              values: [
+                [
+                  if ((profile.district ?? '').isNotEmpty) profile.district,
+                  if ((profile.city ?? '').isNotEmpty) profile.city,
+                ].whereType<String>().join(', ')
+              ],
+            ),
+          const SizedBox(height: 24),
+        ],
         const Text(
           'İletişim',
           style: TextStyle(
@@ -835,6 +870,71 @@ class _AboutSection extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+
+  bool get _hasGeneralInfo =>
+      profile.professionalTypes.isNotEmpty ||
+      profile.services.isNotEmpty ||
+      profile.projectTypes.isNotEmpty ||
+      profile.serviceAreas.isNotEmpty ||
+      profile.styleExpertise.isNotEmpty ||
+      profile.serviceRegions.isNotEmpty ||
+      profile.startingBudget != null ||
+      profile.workingModels.isNotEmpty;
+}
+
+class _InfoWrap extends StatelessWidget {
+  final String label;
+  final List<String> values;
+
+  const _InfoWrap({required this.label, required this.values});
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = values.where((value) => value.trim().isNotEmpty).toList();
+    if (visible.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: visible.take(12).map((value) {
+              return Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(18),
+                  border:
+                      Border.all(color: AppColors.primary.withOpacity(0.18)),
+                ),
+                child: Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primary,
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
     );
   }
 }

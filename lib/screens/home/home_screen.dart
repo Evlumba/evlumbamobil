@@ -1,12 +1,17 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/supabase_client.dart';
 import '../../core/theme.dart';
 import '../../models/designer_project.dart';
 import '../../models/profile.dart';
+import '../../services/search_filters.dart';
+import '../../services/search_intent_service.dart';
+import '../../widgets/search_active_filter_chips.dart';
+import '../../widgets/search_filter_sheet.dart';
 import '../../widgets/smart_image.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -30,7 +35,8 @@ class _ListingPreview {
   });
 
   factory _ListingPreview.fromJson(Map<String, dynamic> j) {
-    final profs = (j['needed_professions'] as List<dynamic>?)?.cast<String>() ?? [];
+    final profs =
+        (j['needed_professions'] as List<dynamic>?)?.cast<String>() ?? [];
     return _ListingPreview(
       id: j['id'] as String,
       title: (j['title'] as String?) ?? '',
@@ -72,7 +78,11 @@ class _ForumPreview {
   final String id, slug, title;
   final String? starterBody;
 
-  const _ForumPreview({required this.id, required this.slug, required this.title, this.starterBody});
+  const _ForumPreview(
+      {required this.id,
+      required this.slug,
+      required this.title,
+      this.starterBody});
 
   factory _ForumPreview.fromJson(Map<String, dynamic> j) {
     return _ForumPreview(
@@ -96,6 +106,32 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  static const _searchHints = [
+    'istanbul iç mimar...',
+    'ankara boya ustası...',
+    'elektrikçi...',
+    'antalya mimar...',
+    'mutfak yenileme...',
+    'banyo tadilat...',
+    'izmir peyzaj mimarı...',
+  ];
+
+  final _homeSearchController = TextEditingController();
+  SearchFilters _homeFilters = const SearchFilters();
+  Timer? _placeholderTimer;
+  String _animatedPlaceholder = '';
+  int _placeholderHintIndex = 0;
+  int _placeholderCharIndex = 0;
+  bool _placeholderDeleting = false;
+  static const _initialTopBannerPage = 1200;
+  static const _topBannerSlots = [1, 3, 4];
+  static const _lowerBannerSlots = [2, 5, 6];
+  final _topBannerController = PageController(
+    initialPage: _initialTopBannerPage,
+  );
+  Timer? _bannerTimer;
+  int _topBannerPage = _initialTopBannerPage;
+
   List<DesignerProject> _projects = [];
   List<Profile> _designers = [];
   List<_ListingPreview> _listings = [];
@@ -108,8 +144,8 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _loadingBlogs = true;
   bool _loadingForums = true;
 
-  String? _banner1Url;
-  String? _banner2Url;
+  List<String> _topBannerUrls = [];
+  List<String> _lowerBannerUrls = [];
 
   bool get _isLoggedIn => supabase.auth.currentSession != null;
 
@@ -122,27 +158,98 @@ class _HomeScreenState extends State<HomeScreen> {
     _fetchListings();
     _fetchBlogs();
     _fetchForums();
+    _tickSearchPlaceholder();
+  }
+
+  @override
+  void dispose() {
+    _placeholderTimer?.cancel();
+    _bannerTimer?.cancel();
+    _topBannerController.dispose();
+    _homeSearchController.dispose();
+    super.dispose();
+  }
+
+  void _tickSearchPlaceholder() {
+    final current = _searchHints[_placeholderHintIndex];
+    if (mounted) {
+      setState(() {
+        _animatedPlaceholder = current.substring(0, _placeholderCharIndex);
+      });
+    }
+
+    Duration delay;
+    if (!_placeholderDeleting && _placeholderCharIndex < current.length) {
+      _placeholderCharIndex++;
+      delay = const Duration(milliseconds: 70);
+    } else if (!_placeholderDeleting) {
+      _placeholderDeleting = true;
+      delay = const Duration(milliseconds: 1200);
+    } else if (_placeholderCharIndex > 0) {
+      _placeholderCharIndex--;
+      delay = const Duration(milliseconds: 34);
+    } else {
+      _placeholderDeleting = false;
+      _placeholderHintIndex = (_placeholderHintIndex + 1) % _searchHints.length;
+      delay = const Duration(milliseconds: 260);
+    }
+
+    _placeholderTimer = Timer(delay, _tickSearchPlaceholder);
   }
 
   Future<void> _fetchBanners() async {
     try {
-      final data = await supabase.from('app_banners').select('slot, image_url');
+      final data = await supabase
+          .from('app_banners')
+          .select('slot, image_url')
+          .inFilter(
+              'slot', [..._topBannerSlots, ..._lowerBannerSlots]).order('slot');
+      final bySlot = <int, String>{};
       for (final row in (data as List)) {
         final slot = row['slot'] as int?;
         final url = row['image_url'] as String?;
-        if (url != null && url.isNotEmpty) {
-          if (slot == 1 && mounted) setState(() => _banner1Url = url);
-          if (slot == 2 && mounted) setState(() => _banner2Url = url);
+        if (slot != null && url != null && url.isNotEmpty) {
+          bySlot[slot] = url;
         }
       }
+
+      if (!mounted) return;
+      setState(() {
+        _topBannerUrls = _topBannerSlots
+            .map((slot) => bySlot[slot])
+            .whereType<String>()
+            .toList();
+        _lowerBannerUrls = _lowerBannerSlots
+            .map((slot) => bySlot[slot])
+            .whereType<String>()
+            .toList();
+      });
+      _restartBannerTimer();
     } catch (_) {}
+  }
+
+  void _restartBannerTimer() {
+    _bannerTimer?.cancel();
+    if (_topBannerUrls.length < 2) return;
+    _bannerTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!_topBannerController.hasClients || _topBannerUrls.length < 2) {
+        return;
+      }
+      _topBannerPage += 1;
+      _topBannerController.animateToPage(
+        _topBannerPage,
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeOutCubic,
+      );
+    });
   }
 
   Future<void> _fetchProjects() async {
     try {
       final data = await supabase
           .from('designer_projects')
-          .select('id, designer_id, title, project_type, cover_image_url, budget_level, tags, is_published, created_at, designer_project_images(image_url, sort_order)')
+          .select(
+              'id, designer_id, title, project_type, cover_image_url, budget_level, tags, is_published, created_at, designer_project_images(image_url, sort_order)')
           .eq('is_published', true)
           .order('created_at', ascending: false)
           .limit(12);
@@ -152,7 +259,11 @@ class _HomeScreenState extends State<HomeScreen> {
           .toList();
 
       // Fetch designer names separately
-      final designerIds = projects.map((p) => p.designerId).where((id) => id.isNotEmpty).toSet().toList();
+      final designerIds = projects
+          .map((p) => p.designerId)
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
       Map<String, String> nameMap = {};
       if (designerIds.isNotEmpty) {
         try {
@@ -173,15 +284,29 @@ class _HomeScreenState extends State<HomeScreen> {
         final name = nameMap[p.designerId];
         if (name == null) return p;
         return DesignerProject(
-          id: p.id, designerId: p.designerId, title: p.title, projectType: p.projectType,
-          location: p.location, description: p.description, tags: p.tags, budgetLevel: p.budgetLevel,
-          coverImageUrl: p.coverImageUrl, isPublished: p.isPublished, createdAt: p.createdAt,
-          images: p.images, shopLinks: p.shopLinks, designerName: name,
+          id: p.id,
+          designerId: p.designerId,
+          title: p.title,
+          projectType: p.projectType,
+          location: p.location,
+          description: p.description,
+          tags: p.tags,
+          budgetLevel: p.budgetLevel,
+          coverImageUrl: p.coverImageUrl,
+          isPublished: p.isPublished,
+          createdAt: p.createdAt,
+          images: p.images,
+          shopLinks: p.shopLinks,
+          designerName: name,
         );
       }).toList();
 
       enriched.shuffle();
-      if (mounted) setState(() { _projects = enriched.take(6).toList(); _loadingProjects = false; });
+      if (mounted)
+        setState(() {
+          _projects = enriched.take(6).toList();
+          _loadingProjects = false;
+        });
     } catch (e) {
       debugPrint('_fetchProjects error: $e');
       if (mounted) setState(() => _loadingProjects = false);
@@ -193,13 +318,16 @@ class _HomeScreenState extends State<HomeScreen> {
       // Only fetch profiles that have an avatar photo
       final data = await supabase
           .from('profiles')
-          .select('id, full_name, business_name, avatar_url, specialty, city, cover_photo_url, tags, starting_from')
+          .select(
+              'id, full_name, business_name, avatar_url, specialty, city, cover_photo_url, tags, starting_from, about_details')
           .eq('role', 'designer')
           .not('avatar_url', 'is', null)
           .neq('avatar_url', '')
           .limit(80);
 
-      final profiles = (data as List).map((e) => Profile.fromJson(e as Map<String, dynamic>)).toList();
+      final profiles = (data as List)
+          .map((e) => Profile.fromJson(e as Map<String, dynamic>))
+          .toList();
       if (profiles.isEmpty) {
         if (mounted) setState(() => _loadingDesigners = false);
         return;
@@ -213,15 +341,20 @@ class _HomeScreenState extends State<HomeScreen> {
           .inFilter('designer_id', ids)
           .eq('is_published', true);
 
-      final designerIdsWithProjects = (projectData as List)
-          .map((e) => e['designer_id'] as String)
-          .toSet();
+      final designerIdsWithProjects =
+          (projectData as List).map((e) => e['designer_id'] as String).toSet();
 
       // Keep only designers with ≥1 project
-      final qualified = profiles.where((p) => designerIdsWithProjects.contains(p.id)).toList();
+      final qualified = profiles
+          .where((p) => designerIdsWithProjects.contains(p.id))
+          .toList();
       qualified.shuffle();
 
-      if (mounted) setState(() { _designers = qualified.take(6).toList(); _loadingDesigners = false; });
+      if (mounted)
+        setState(() {
+          _designers = qualified.take(6).toList();
+          _loadingDesigners = false;
+        });
     } catch (e) {
       if (mounted) setState(() => _loadingDesigners = false);
     }
@@ -231,7 +364,8 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final data = await supabase
           .from('listings')
-          .select('id, title, city, is_urgent, budget_min, budget_max, needed_professions, status')
+          .select(
+              'id, title, city, is_urgent, budget_min, budget_max, needed_professions, status')
           .eq('status', 'published')
           .order('is_urgent', ascending: false)
           .order('created_at', ascending: false)
@@ -239,7 +373,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (mounted) {
         setState(() {
-          _listings = (data as List).map((e) => _ListingPreview.fromJson(e as Map<String, dynamic>)).toList();
+          _listings = (data as List)
+              .map((e) => _ListingPreview.fromJson(e as Map<String, dynamic>))
+              .toList();
           _loadingListings = false;
         });
       }
@@ -253,7 +389,8 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final data = await supabase
           .from('blog_posts')
-          .select('id, author_id, slug, title, excerpt, cover_image_url, published_at')
+          .select(
+              'id, author_id, slug, title, excerpt, cover_image_url, published_at')
           .eq('status', 'published')
           .order('published_at', ascending: false)
           .limit(2);
@@ -261,11 +398,18 @@ class _HomeScreenState extends State<HomeScreen> {
       final posts = (data as List).cast<Map<String, dynamic>>();
 
       // Fetch author profiles separately
-      final authorIds = posts.map((p) => p['author_id'] as String?).whereType<String>().toSet().toList();
+      final authorIds = posts
+          .map((p) => p['author_id'] as String?)
+          .whereType<String>()
+          .toSet()
+          .toList();
       Map<String, Map<String, dynamic>> authorMap = {};
       if (authorIds.isNotEmpty) {
         try {
-          final profiles = await supabase.from('profiles').select('id, full_name, avatar_url').inFilter('id', authorIds);
+          final profiles = await supabase
+              .from('profiles')
+              .select('id, full_name, avatar_url')
+              .inFilter('id', authorIds);
           for (final p in (profiles as List)) {
             final id = p['id'] as String?;
             if (id != null) authorMap[id] = p as Map<String, dynamic>;
@@ -287,7 +431,11 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }).toList();
 
-      if (mounted) setState(() { _blogs = blogs; _loadingBlogs = false; });
+      if (mounted)
+        setState(() {
+          _blogs = blogs;
+          _loadingBlogs = false;
+        });
     } catch (e) {
       debugPrint('_fetchBlogs error: $e');
       if (mounted) setState(() => _loadingBlogs = false);
@@ -304,7 +452,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (mounted) {
         setState(() {
-          _forums = (data as List).map((e) => _ForumPreview.fromJson(e as Map<String, dynamic>)).toList();
+          _forums = (data as List)
+              .map((e) => _ForumPreview.fromJson(e as Map<String, dynamic>))
+              .toList();
           _loadingForums = false;
         });
       }
@@ -322,11 +472,13 @@ class _HomeScreenState extends State<HomeScreen> {
         slivers: [
           _buildAppBar(),
           SliverToBoxAdapter(child: _buildSearchBar()),
-          if (_banner1Url != null) SliverToBoxAdapter(child: _buildHeroBanner()),
+          if (_topBannerUrls.isNotEmpty)
+            SliverToBoxAdapter(child: _buildHeroBanner()),
           SliverToBoxAdapter(child: _buildQuickActions()),
           SliverToBoxAdapter(child: _buildIlhamAl()),
           SliverToBoxAdapter(child: _buildProfessionals()),
-          if (_banner2Url != null) SliverToBoxAdapter(child: _buildSecondBanner()),
+          if (_lowerBannerUrls.isNotEmpty)
+            SliverToBoxAdapter(child: _buildSecondBanner()),
           SliverToBoxAdapter(child: _buildIlanlar()),
           SliverToBoxAdapter(child: _buildBlog()),
           SliverToBoxAdapter(child: _buildForum()),
@@ -353,20 +505,33 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       title: Row(
         children: [
-          Image.asset('assets/web_icon2.png', width: 32, height: 32, fit: BoxFit.contain),
+          Image.asset('assets/web_icon2.png',
+              width: 32, height: 32, fit: BoxFit.contain),
           const SizedBox(width: 8),
-          const Text('evlumba', style: TextStyle(color: Color(0xFF0E5A3A), fontSize: 20, fontWeight: FontWeight.w800)),
+          const Text('evlumba',
+              style: TextStyle(
+                  color: Color(0xFF0E5A3A),
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800)),
           const Spacer(),
           _AppBarIcon(icon: Icons.notifications_none_rounded, onTap: () {}),
           const SizedBox(width: 6),
-          _AppBarIcon(icon: Icons.chat_bubble_outline_rounded, onTap: () => context.push('/messages')),
+          _AppBarIcon(
+              icon: Icons.chat_bubble_outline_rounded,
+              onTap: () => context.push('/messages')),
           const SizedBox(width: 6),
           GestureDetector(
-            onTap: () => _isLoggedIn ? context.push('/profile') : context.push('/login'),
+            onTap: () =>
+                _isLoggedIn ? context.push('/profile') : context.push('/login'),
             child: Container(
-              width: 34, height: 34,
-              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.border, width: 1.5), color: AppColors.background),
-              child: const Icon(Icons.person_outline_rounded, size: 20, color: AppColors.textSecondary),
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.border, width: 1.5),
+                  color: AppColors.background),
+              child: const Icon(Icons.person_outline_rounded,
+                  size: 20, color: AppColors.textSecondary),
             ),
           ),
         ],
@@ -379,36 +544,222 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildSearchBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-      child: GestureDetector(
-        onTap: () => context.push('/explore'),
-        child: Container(
-          height: 48,
-          decoration: BoxDecoration(
-            color: Colors.white, borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppColors.border),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.border),
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withOpacity(0.04),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2))
+                    ],
+                  ),
+                  child: TextField(
+                    controller: _homeSearchController,
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: _submitHomeSearch,
+                    decoration: InputDecoration(
+                      hintText: _animatedPlaceholder.isEmpty
+                          ? 'istanbul iç mimar...'
+                          : _animatedPlaceholder,
+                      hintStyle: const TextStyle(
+                          fontSize: 14, color: AppColors.textSecondary),
+                      prefixIcon: const Icon(Icons.search_rounded,
+                          size: 20, color: AppColors.textSecondary),
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.arrow_forward_rounded, size: 20),
+                        color: AppColors.textSecondary,
+                        onPressed: () =>
+                            _submitHomeSearch(_homeSearchController.text),
+                        tooltip: 'Ara',
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 13),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: _showSearchFilters,
+                child: Container(
+                  height: 48,
+                  width: 52,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: _homeFilters.hasAny
+                          ? AppColors.primary
+                          : AppColors.border,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withOpacity(0.04),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2))
+                    ],
+                  ),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Icon(
+                        Icons.tune_rounded,
+                        size: 21,
+                        color: _homeFilters.hasAny
+                            ? AppColors.primary
+                            : AppColors.textSecondary,
+                      ),
+                      if (_homeFilters.hasAny)
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: Container(
+                            width: 16,
+                            height: 16,
+                            decoration: const BoxDecoration(
+                              color: AppColors.primary,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Center(
+                              child: Text(
+                                '${_homeFilters.activeCount}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
-          child: Row(children: [
-            const SizedBox(width: 14),
-            const Icon(Icons.search_rounded, size: 20, color: AppColors.textSecondary),
-            const SizedBox(width: 10),
-            const Expanded(child: Text('Proje, ürün, mimar ara...', style: TextStyle(fontSize: 14, color: AppColors.textSecondary))),
-            Container(
-              margin: const EdgeInsets.symmetric(vertical: 9, horizontal: 10),
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(color: const Color(0xFFF0F0EC), borderRadius: BorderRadius.circular(8)),
-              child: const Icon(Icons.tune_rounded, size: 15, color: AppColors.textSecondary),
+          if (_homeFilters.hasAny) ...[
+            const SizedBox(height: 8),
+            SearchActiveFilterChips(
+              filters: _homeFilters,
+              onRemove: _removeHomeFilter,
             ),
-          ]),
-        ),
+          ],
+        ],
       ),
+    );
+  }
+
+  Future<void> _showSearchFilters() async {
+    final result = await showModalBottomSheet<SearchFilters>(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SearchFilterSheet(
+        filters: _homeFilters,
+        mode: SearchFilterSheetMode.home,
+      ),
+    );
+
+    if (result == null || !mounted) return;
+    setState(() => _homeFilters = result);
+    _runHomeSearch(result, _homeSearchController.text);
+  }
+
+  void _removeHomeFilter(String key, String value) {
+    setState(() {
+      _homeFilters = _homeFilters.removeValue(key, value);
+    });
+  }
+
+  void _submitHomeSearch(String value) {
+    _runHomeSearch(_homeFilters, value);
+  }
+
+  void _clearHomeSearchAfterNavigation(SearchFilters filters, String query) {
+    if ((!filters.hasAny && query.trim().isEmpty) || !mounted) return;
+    setState(() {
+      _homeFilters = const SearchFilters();
+      _homeSearchController.clear();
+    });
+  }
+
+  void _pushHomeSearchRoute(
+    String route,
+    SearchFilters filters,
+    String query,
+  ) {
+    _clearHomeSearchAfterNavigation(filters, query);
+    context.push(route);
+  }
+
+  void _runHomeSearch(SearchFilters filters, String value) {
+    final query = value.trim();
+    if (query.isEmpty && !filters.hasAny) {
+      context.push('/explore');
+      return;
+    }
+
+    if (filters.onlyProjects) {
+      final params = filters.projectParams(query);
+      final queryString = SearchFilters.routeQuery(params);
+      _pushHomeSearchRoute(
+        '/explore${queryString.isEmpty ? '' : '?$queryString'}',
+        filters,
+        query,
+      );
+      return;
+    }
+
+    if (filters.onlyProfessionals ||
+        filters.hasProfessionalSort ||
+        filters.professionals.isNotEmpty ||
+        filters.services.isNotEmpty ||
+        filters.projectTypes.isNotEmpty ||
+        filters.serviceRegions.isNotEmpty ||
+        SearchIntentService.isProfessionalQuery(query)) {
+      final params = filters.designerParams(query);
+      final queryString = SearchFilters.routeQuery(params);
+      _pushHomeSearchRoute(
+        '/designers-list${queryString.isEmpty ? '' : '?$queryString'}',
+        filters,
+        query,
+      );
+      return;
+    }
+
+    final params = filters.projectParams(query);
+    final queryString = SearchFilters.routeQuery(params);
+    _pushHomeSearchRoute(
+      '/explore${queryString.isEmpty ? '' : '?$queryString'}',
+      filters,
+      query,
     );
   }
 
   // ── Hero Banner ──────────────────────────────────────────────
 
   Widget _buildHeroBanner() {
-    return _FullWidthBanner(imageUrl: _banner1Url!, topPadding: 16);
+    return _TopBannerCarousel(
+      imageUrls: _topBannerUrls,
+      controller: _topBannerController,
+      activeIndex: _topBannerPage % _topBannerUrls.length,
+      topPadding: 16,
+      onPageChanged: (page) => setState(() => _topBannerPage = page),
+    );
   }
 
   // ── Quick Actions ────────────────────────────────────────────
@@ -416,9 +767,14 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildQuickActions() {
     final items = [
       (Icons.forum_outlined, 'Forum', () => context.push('/forum')),
-      (Icons.auto_awesome_outlined, 'AI Tasarla', () {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Çok yakında!'), duration: Duration(seconds: 1)));
-      }),
+      (
+        Icons.auto_awesome_outlined,
+        'AI Tasarla',
+        () {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Çok yakında!'), duration: Duration(seconds: 1)));
+        }
+      ),
       (Icons.article_outlined, 'Blog', () => context.push('/blog')),
       (Icons.work_outline_rounded, 'İlanlar', () => context.push('/ilanlar')),
     ];
@@ -434,15 +790,31 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Container(
                   height: 76,
                   decoration: BoxDecoration(
-                    color: Colors.white, borderRadius: BorderRadius.circular(16),
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
                     border: Border.all(color: AppColors.border),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withOpacity(0.04),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2))
+                    ],
                   ),
-                  child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Icon(items[i].$1, size: 24, color: const Color(0xFF0E5A3A)),
-                    const SizedBox(height: 5),
-                    Text(items[i].$2, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textPrimary), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  ]),
+                  child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(items[i].$1,
+                            size: 24, color: const Color(0xFF0E5A3A)),
+                        const SizedBox(height: 5),
+                        Text(items[i].$2,
+                            style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary),
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
+                      ]),
                 ),
               ),
             ),
@@ -463,17 +835,29 @@ class _HomeScreenState extends State<HomeScreen> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(children: [
-            const Text('İlham', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+            const Text('İlham',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary)),
             const SizedBox(width: 4),
-            const Text('✦', style: TextStyle(fontSize: 12, color: Color(0xFF0E5A3A))),
+            const Text('✦',
+                style: TextStyle(fontSize: 12, color: Color(0xFF0E5A3A))),
             const Spacer(),
             GestureDetector(
               onTap: () => context.push('/explore'),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(color: const Color(0xFF0E5A3A), borderRadius: BorderRadius.circular(20)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                    color: const Color(0xFF0E5A3A),
+                    borderRadius: BorderRadius.circular(20)),
                 child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                  Text('Tümünü gör', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600)),
+                  Text('Tümünü gör',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600)),
                   SizedBox(width: 3),
                   Icon(Icons.chevron_right, size: 15, color: Colors.white),
                 ]),
@@ -490,10 +874,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   separatorBuilder: (_, __) => const SizedBox(width: 10),
                   itemCount: 4,
-                  itemBuilder: (_, __) => const SizedBox(width: 150, child: _SkeletonBox(height: 200)),
+                  itemBuilder: (_, __) => const SizedBox(
+                      width: 150, child: _SkeletonBox(height: 200)),
                 )
               : _projects.isEmpty
-                  ? const Center(child: Text('Henüz proje yok', style: TextStyle(color: AppColors.textSecondary)))
+                  ? const Center(
+                      child: Text('Henüz proje yok',
+                          style: TextStyle(color: AppColors.textSecondary)))
                   : ListView.separated(
                       scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -505,7 +892,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           project: _projects[i],
                           height: 200,
                           onTap: () {
-                            if (!_isLoggedIn) { context.go('/login'); return; }
+                            if (!_isLoggedIn) {
+                              context.go('/login');
+                              return;
+                            }
                             context.push('/projects/${_projects[i].id}');
                           },
                         ),
@@ -526,17 +916,29 @@ class _HomeScreenState extends State<HomeScreen> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(children: [
-            const Text('Profesyoneller', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+            const Text('Profesyoneller',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary)),
             const SizedBox(width: 4),
-            const Text('✦', style: TextStyle(fontSize: 12, color: Color(0xFF0E5A3A))),
+            const Text('✦',
+                style: TextStyle(fontSize: 12, color: Color(0xFF0E5A3A))),
             const Spacer(),
             GestureDetector(
               onTap: () => context.push('/designers-list'),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(color: const Color(0xFF0E5A3A), borderRadius: BorderRadius.circular(20)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                    color: const Color(0xFF0E5A3A),
+                    borderRadius: BorderRadius.circular(20)),
                 child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                  Text('Tümünü gör', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600)),
+                  Text('Tümünü gör',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600)),
                   SizedBox(width: 3),
                   Icon(Icons.chevron_right, size: 15, color: Colors.white),
                 ]),
@@ -562,10 +964,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   itemCount: _designers.length,
                   itemBuilder: (context, i) {
                     final d = _designers[i];
-                    return _DesignerChip(designer: d, onTap: () {
-                      if (!_isLoggedIn) { context.go('/login'); return; }
-                      context.push('/designers/${d.id}');
-                    });
+                    return _DesignerChip(
+                        designer: d,
+                        onTap: () {
+                          if (!_isLoggedIn) {
+                            context.go('/login');
+                            return;
+                          }
+                          context.push('/designers/${d.id}');
+                        });
                   },
                 ),
         ),
@@ -576,7 +983,15 @@ class _HomeScreenState extends State<HomeScreen> {
   // ── Second Banner ─────────────────────────────────────────────
 
   Widget _buildSecondBanner() {
-    return _FullWidthBanner(imageUrl: _banner2Url!, topPadding: 28);
+    return Column(
+      children: [
+        for (var i = 0; i < _lowerBannerUrls.length; i++)
+          _FullWidthBanner(
+            imageUrl: _lowerBannerUrls[i],
+            topPadding: i == 0 ? 28 : 12,
+          ),
+      ],
+    );
   }
 
   // ── İlanlar ───────────────────────────────────────────────────
@@ -589,15 +1004,26 @@ class _HomeScreenState extends State<HomeScreen> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(children: [
-            const Text('İlanlar', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+            const Text('İlanlar',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary)),
             const Spacer(),
             GestureDetector(
               onTap: () => context.push('/ilanlar'),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(color: const Color(0xFF0E5A3A), borderRadius: BorderRadius.circular(20)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                    color: const Color(0xFF0E5A3A),
+                    borderRadius: BorderRadius.circular(20)),
                 child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                  Text('Tümünü gör', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600)),
+                  Text('Tümünü gör',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600)),
                   SizedBox(width: 3),
                   Icon(Icons.chevron_right, size: 15, color: Colors.white),
                 ]),
@@ -609,58 +1035,109 @@ class _HomeScreenState extends State<HomeScreen> {
         if (_loadingListings)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(children: List.generate(2, (_) => Padding(padding: const EdgeInsets.only(bottom: 10), child: _SkeletonBox(height: 70)))),
+            child: Column(
+                children: List.generate(
+                    2,
+                    (_) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _SkeletonBox(height: 70)))),
           )
         else if (_listings.isEmpty)
-          const Padding(padding: EdgeInsets.fromLTRB(16, 8, 16, 0), child: Text('Aktif ilan yok.', style: TextStyle(color: AppColors.textSecondary)))
+          const Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Text('Aktif ilan yok.',
+                  style: TextStyle(color: AppColors.textSecondary)))
         else
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
-              children: _listings.map((l) => GestureDetector(
-                onTap: () => context.push('/ilanlar'),
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.white, borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.border),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
-                  ),
-                  child: Row(children: [
-                    Container(
-                      width: 42, height: 42,
-                      decoration: BoxDecoration(color: const Color(0xFF0E5A3A).withOpacity(0.08), borderRadius: BorderRadius.circular(12)),
-                      child: const Icon(Icons.work_outline_rounded, color: Color(0xFF0E5A3A), size: 22),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Row(children: [
-                        if (l.isUrgent) ...[
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(color: const Color(0xFFDC2626).withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
-                            child: const Text('Acil', style: TextStyle(fontSize: 9, color: Color(0xFFDC2626), fontWeight: FontWeight.w700)),
+              children: _listings
+                  .map((l) => GestureDetector(
+                        onTap: () => context.push('/ilanlar'),
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: AppColors.border),
+                            boxShadow: [
+                              BoxShadow(
+                                  color: Colors.black.withOpacity(0.04),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2))
+                            ],
                           ),
-                          const SizedBox(width: 6),
-                        ],
-                        Expanded(child: Text(l.title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis)),
-                      ]),
-                      const SizedBox(height: 3),
-                      Row(children: [
-                        const Icon(Icons.location_on_outlined, size: 12, color: AppColors.textSecondary),
-                        const SizedBox(width: 2),
-                        Text(l.city, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-                        if (l.budgetMin != null) ...[
-                          const SizedBox(width: 8),
-                          Text('₺${l.budgetMin} – ₺${l.budgetMax ?? '?'}', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-                        ],
-                      ]),
-                    ])),
-                    const Icon(Icons.chevron_right, size: 18, color: AppColors.textSecondary),
-                  ]),
-                ),
-              )).toList(),
+                          child: Row(children: [
+                            Container(
+                              width: 42,
+                              height: 42,
+                              decoration: BoxDecoration(
+                                  color:
+                                      const Color(0xFF0E5A3A).withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(12)),
+                              child: const Icon(Icons.work_outline_rounded,
+                                  color: Color(0xFF0E5A3A), size: 22),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                                child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                  Row(children: [
+                                    if (l.isUrgent) ...[
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                            color: const Color(0xFFDC2626)
+                                                .withOpacity(0.1),
+                                            borderRadius:
+                                                BorderRadius.circular(4)),
+                                        child: const Text('Acil',
+                                            style: TextStyle(
+                                                fontSize: 9,
+                                                color: Color(0xFFDC2626),
+                                                fontWeight: FontWeight.w700)),
+                                      ),
+                                      const SizedBox(width: 6),
+                                    ],
+                                    Expanded(
+                                        child: Text(l.title,
+                                            style: const TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w700,
+                                                color: AppColors.textPrimary),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis)),
+                                  ]),
+                                  const SizedBox(height: 3),
+                                  Row(children: [
+                                    const Icon(Icons.location_on_outlined,
+                                        size: 12,
+                                        color: AppColors.textSecondary),
+                                    const SizedBox(width: 2),
+                                    Text(l.city,
+                                        style: const TextStyle(
+                                            fontSize: 11,
+                                            color: AppColors.textSecondary)),
+                                    if (l.budgetMin != null) ...[
+                                      const SizedBox(width: 8),
+                                      Text(
+                                          '₺${l.budgetMin} – ₺${l.budgetMax ?? '?'}',
+                                          style: const TextStyle(
+                                              fontSize: 11,
+                                              color: AppColors.textSecondary)),
+                                    ],
+                                  ]),
+                                ])),
+                            const Icon(Icons.chevron_right,
+                                size: 18, color: AppColors.textSecondary),
+                          ]),
+                        ),
+                      ))
+                  .toList(),
             ),
           ),
       ],
@@ -677,15 +1154,26 @@ class _HomeScreenState extends State<HomeScreen> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(children: [
-            const Text('Blog', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+            const Text('Blog',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary)),
             const Spacer(),
             GestureDetector(
               onTap: () => context.push('/blog'),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(color: const Color(0xFF0E5A3A), borderRadius: BorderRadius.circular(20)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                    color: const Color(0xFF0E5A3A),
+                    borderRadius: BorderRadius.circular(20)),
                 child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                  Text('Tümünü gör', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600)),
+                  Text('Tümünü gör',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600)),
                   SizedBox(width: 3),
                   Icon(Icons.chevron_right, size: 15, color: Colors.white),
                 ]),
@@ -702,11 +1190,15 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               itemCount: 2,
               separatorBuilder: (_, __) => const SizedBox(width: 12),
-              itemBuilder: (_, __) => const SizedBox(width: 240, child: _SkeletonBox(height: 280)),
+              itemBuilder: (_, __) =>
+                  const SizedBox(width: 240, child: _SkeletonBox(height: 280)),
             ),
           )
         else if (_blogs.isEmpty)
-          const Padding(padding: EdgeInsets.fromLTRB(16, 8, 16, 0), child: Text('Henüz blog yazısı yok.', style: TextStyle(color: AppColors.textSecondary)))
+          const Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Text('Henüz blog yazısı yok.',
+                  style: TextStyle(color: AppColors.textSecondary)))
         else
           SizedBox(
             height: 280,
@@ -723,44 +1215,96 @@ class _HomeScreenState extends State<HomeScreen> {
                     width: 240,
                     child: Container(
                       decoration: BoxDecoration(
-                        color: Colors.white, borderRadius: BorderRadius.circular(16),
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
                         border: Border.all(color: AppColors.border),
-                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
+                        boxShadow: [
+                          BoxShadow(
+                              color: Colors.black.withOpacity(0.04),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2))
+                        ],
                       ),
                       clipBehavior: Clip.hardEdge,
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        if (b.coverImageUrl != null && b.coverImageUrl!.isNotEmpty)
-                          SizedBox(
-                            height: 130,
-                            width: double.infinity,
-                            child: SmartImage(url: b.coverImageUrl, fit: BoxFit.cover, width: double.infinity),
-                          ),
-                        Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text(b.title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary), maxLines: 2, overflow: TextOverflow.ellipsis),
-                            if (b.excerpt != null && b.excerpt!.isNotEmpty) ...[
-                              const SizedBox(height: 4),
-                              Text(b.excerpt!, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, height: 1.4), maxLines: 2, overflow: TextOverflow.ellipsis),
-                            ],
-                            const SizedBox(height: 10),
-                            Row(children: [
-                              Container(
-                                width: 24, height: 24,
-                                decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.border)),
-                                clipBehavior: Clip.hardEdge,
-                                child: b.authorAvatarUrl != null && b.authorAvatarUrl!.isNotEmpty
-                                    ? SmartImage(url: b.authorAvatarUrl, fit: BoxFit.cover)
-                                    : Container(color: const Color(0xFF0E5A3A).withOpacity(0.1),
-                                        child: Center(child: Text((b.authorName ?? 'P').substring(0, 1).toUpperCase(),
-                                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF0E5A3A))))),
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (b.coverImageUrl != null &&
+                                b.coverImageUrl!.isNotEmpty)
+                              SizedBox(
+                                height: 130,
+                                width: double.infinity,
+                                child: SmartImage(
+                                    url: b.coverImageUrl,
+                                    fit: BoxFit.cover,
+                                    width: double.infinity),
                               ),
-                              const SizedBox(width: 6),
-                              Expanded(child: Text(b.authorName ?? 'Yazar', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis)),
-                            ]),
+                            Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(b.title,
+                                        style: const TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppColors.textPrimary),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis),
+                                    if (b.excerpt != null &&
+                                        b.excerpt!.isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      Text(b.excerpt!,
+                                          style: const TextStyle(
+                                              fontSize: 11,
+                                              color: AppColors.textSecondary,
+                                              height: 1.4),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis),
+                                    ],
+                                    const SizedBox(height: 10),
+                                    Row(children: [
+                                      Container(
+                                        width: 24,
+                                        height: 24,
+                                        decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                                color: AppColors.border)),
+                                        clipBehavior: Clip.hardEdge,
+                                        child: b.authorAvatarUrl != null &&
+                                                b.authorAvatarUrl!.isNotEmpty
+                                            ? SmartImage(
+                                                url: b.authorAvatarUrl,
+                                                fit: BoxFit.cover)
+                                            : Container(
+                                                color: const Color(0xFF0E5A3A)
+                                                    .withOpacity(0.1),
+                                                child: Center(
+                                                    child: Text(
+                                                        (b.authorName ?? 'P')
+                                                            .substring(0, 1)
+                                                            .toUpperCase(),
+                                                        style: const TextStyle(
+                                                            fontSize: 11,
+                                                            fontWeight:
+                                                                FontWeight.w700,
+                                                            color: Color(
+                                                                0xFF0E5A3A))))),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                          child: Text(b.authorName ?? 'Yazar',
+                                              style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: AppColors.textPrimary),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis)),
+                                    ]),
+                                  ]),
+                            ),
                           ]),
-                        ),
-                      ]),
                     ),
                   ),
                 );
@@ -781,15 +1325,26 @@ class _HomeScreenState extends State<HomeScreen> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(children: [
-            const Text('Forum', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+            const Text('Forum',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary)),
             const Spacer(),
             GestureDetector(
               onTap: () => context.push('/forum'),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(color: const Color(0xFF0E5A3A), borderRadius: BorderRadius.circular(20)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                    color: const Color(0xFF0E5A3A),
+                    borderRadius: BorderRadius.circular(20)),
                 child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                  Text('Tümünü gör', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600)),
+                  Text('Tümünü gör',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600)),
                   SizedBox(width: 3),
                   Icon(Icons.chevron_right, size: 15, color: Colors.white),
                 ]),
@@ -801,43 +1356,82 @@ class _HomeScreenState extends State<HomeScreen> {
         if (_loadingForums)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(children: List.generate(3, (_) => Padding(padding: const EdgeInsets.only(bottom: 10), child: _SkeletonBox(height: 60)))),
+            child: Column(
+                children: List.generate(
+                    3,
+                    (_) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _SkeletonBox(height: 60)))),
           )
         else if (_forums.isEmpty)
-          const Padding(padding: EdgeInsets.fromLTRB(16, 8, 16, 0), child: Text('Henüz forum yazısı yok.', style: TextStyle(color: AppColors.textSecondary)))
+          const Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Text('Henüz forum yazısı yok.',
+                  style: TextStyle(color: AppColors.textSecondary)))
         else
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
-              children: _forums.map((f) => GestureDetector(
-                onTap: () => context.push('/forum/${f.id}'),
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white, borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.border),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
-                  ),
-                  child: Row(children: [
-                    Container(
-                      width: 36, height: 36,
-                      decoration: BoxDecoration(color: const Color(0xFF0E5A3A).withOpacity(0.08), borderRadius: BorderRadius.circular(10)),
-                      child: const Icon(Icons.forum_outlined, color: Color(0xFF0E5A3A), size: 18),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(f.title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary), maxLines: 2, overflow: TextOverflow.ellipsis),
-                      if (f.starterBody != null && f.starterBody!.isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(f.starterBody!, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
-                      ],
-                    ])),
-                    const SizedBox(width: 8),
-                    const Icon(Icons.chevron_right, size: 18, color: AppColors.textSecondary),
-                  ]),
-                ),
-              )).toList(),
+              children: _forums
+                  .map((f) => GestureDetector(
+                        onTap: () => context.push('/forum/${f.id}'),
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: AppColors.border),
+                            boxShadow: [
+                              BoxShadow(
+                                  color: Colors.black.withOpacity(0.04),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2))
+                            ],
+                          ),
+                          child: Row(children: [
+                            Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                  color:
+                                      const Color(0xFF0E5A3A).withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(10)),
+                              child: const Icon(Icons.forum_outlined,
+                                  color: Color(0xFF0E5A3A), size: 18),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                                child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                  Text(f.title,
+                                      style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.textPrimary),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis),
+                                  if (f.starterBody != null &&
+                                      f.starterBody!.isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Text(f.starterBody!,
+                                        style: const TextStyle(
+                                            fontSize: 11,
+                                            color: AppColors.textSecondary),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis),
+                                  ],
+                                ])),
+                            const SizedBox(width: 8),
+                            const Icon(Icons.chevron_right,
+                                size: 18, color: AppColors.textSecondary),
+                          ]),
+                        ),
+                      ))
+                  .toList(),
             ),
           ),
       ],
@@ -852,14 +1446,37 @@ class _HomeScreenState extends State<HomeScreen> {
       Container(height: 1, color: AppColors.border),
       const SizedBox(height: 16),
       Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        GestureDetector(onTap: () => context.push('/sss'), child: const Text('SSS', style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500))),
-        const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('·', style: TextStyle(color: AppColors.textSecondary))),
-        GestureDetector(onTap: () => context.push('/iletisim'), child: const Text('İletişim', style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500))),
-        const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('·', style: TextStyle(color: AppColors.textSecondary))),
-        GestureDetector(onTap: () => context.push('/gizlilik-politikasi'), child: const Text('Gizlilik', style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500))),
+        GestureDetector(
+            onTap: () => context.push('/sss'),
+            child: const Text('SSS',
+                style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w500))),
+        const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 8),
+            child: Text('·', style: TextStyle(color: AppColors.textSecondary))),
+        GestureDetector(
+            onTap: () => context.push('/iletisim'),
+            child: const Text('İletişim',
+                style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w500))),
+        const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 8),
+            child: Text('·', style: TextStyle(color: AppColors.textSecondary))),
+        GestureDetector(
+            onTap: () => context.push('/gizlilik-politikasi'),
+            child: const Text('Gizlilik',
+                style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w500))),
       ]),
       const SizedBox(height: 10),
-      const Text('© 2025 Evlumba', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+      const Text('© 2025 Evlumba',
+          style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
       const SizedBox(height: 16),
     ]);
   }
@@ -868,6 +1485,80 @@ class _HomeScreenState extends State<HomeScreen> {
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared Banner Widget
 // ─────────────────────────────────────────────────────────────────────────────
+
+class _TopBannerCarousel extends StatelessWidget {
+  final List<String> imageUrls;
+  final PageController controller;
+  final int activeIndex;
+  final double topPadding;
+  final ValueChanged<int> onPageChanged;
+
+  const _TopBannerCarousel({
+    required this.imageUrls,
+    required this.controller,
+    required this.activeIndex,
+    required this.onPageChanged,
+    this.topPadding = 0,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (imageUrls.length == 1) {
+      return _FullWidthBanner(
+          imageUrl: imageUrls.first, topPadding: topPadding);
+    }
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, topPadding, 16, 0),
+      child: Column(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: AspectRatio(
+              aspectRatio: 2.7,
+              child: PageView.builder(
+                controller: controller,
+                onPageChanged: onPageChanged,
+                itemBuilder: (context, index) {
+                  final imageUrl = imageUrls[index % imageUrls.length];
+                  return CachedNetworkImage(
+                    imageUrl: imageUrl,
+                    fit: BoxFit.cover,
+                    width: double.infinity,
+                    placeholder: (_, __) => Container(
+                      color: AppColors.border.withOpacity(0.4),
+                    ),
+                    errorWidget: (_, __, ___) => Container(
+                      color: AppColors.border.withOpacity(0.4),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              for (var i = 0; i < imageUrls.length; i++)
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: i == activeIndex ? 18 : 6,
+                  height: 6,
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  decoration: BoxDecoration(
+                    color:
+                        i == activeIndex ? AppColors.primary : AppColors.border,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _FullWidthBanner extends StatelessWidget {
   final String imageUrl;
@@ -885,7 +1576,8 @@ class _FullWidthBanner extends StatelessWidget {
           imageUrl: imageUrl,
           fit: BoxFit.cover,
           width: double.infinity,
-          placeholder: (_, __) => Container(height: 160, color: AppColors.border.withOpacity(0.4)),
+          placeholder: (_, __) =>
+              Container(height: 160, color: AppColors.border.withOpacity(0.4)),
           errorWidget: (_, __, ___) => const SizedBox.shrink(),
         ),
       ),
@@ -910,14 +1602,24 @@ class _DiscoverGrid extends StatelessWidget {
     }
 
     Widget col(List<DesignerProject> items) => Column(
-      children: items.asMap().entries.map((e) => Padding(
-        padding: EdgeInsets.only(bottom: e.key < items.length - 1 ? 10 : 0),
-        child: _DiscoverCard(project: e.value, height: 200, onTap: () => onTap(e.value)),
-      )).toList(),
-    );
+          children: items
+              .asMap()
+              .entries
+              .map((e) => Padding(
+                    padding: EdgeInsets.only(
+                        bottom: e.key < items.length - 1 ? 10 : 0),
+                    child: _DiscoverCard(
+                        project: e.value,
+                        height: 200,
+                        onTap: () => onTap(e.value)),
+                  ))
+              .toList(),
+        );
 
     return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Expanded(child: col(left)), const SizedBox(width: 10), Expanded(child: col(right)),
+      Expanded(child: col(left)),
+      const SizedBox(width: 10),
+      Expanded(child: col(right)),
     ]);
   }
 }
@@ -926,7 +1628,8 @@ class _DiscoverCard extends StatelessWidget {
   final DesignerProject project;
   final double height;
   final VoidCallback onTap;
-  const _DiscoverCard({required this.project, required this.height, required this.onTap});
+  const _DiscoverCard(
+      {required this.project, required this.height, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -937,23 +1640,50 @@ class _DiscoverCard extends StatelessWidget {
       child: Container(
         height: height,
         decoration: BoxDecoration(
-          color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.border),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.border),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 8,
+                offset: const Offset(0, 2))
+          ],
         ),
         clipBehavior: Clip.hardEdge,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Expanded(child: imgUrl.isNotEmpty
-              ? SmartImage(url: imgUrl, fit: BoxFit.cover, width: double.infinity)
-              : Container(color: AppColors.border, child: const Icon(Icons.image_outlined, color: AppColors.textSecondary))),
+          Expanded(
+              child: imgUrl.isNotEmpty
+                  ? SmartImage(
+                      url: imgUrl, fit: BoxFit.cover, width: double.infinity)
+                  : Container(
+                      color: AppColors.border,
+                      child: const Icon(Icons.image_outlined,
+                          color: AppColors.textSecondary))),
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 7, 8, 8),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(project.title, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(project.title,
+                  style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis),
               const SizedBox(height: 3),
               Row(children: [
-                Expanded(child: Text(name.isNotEmpty ? name.split(' ').first : (project.projectType ?? ''),
-                    style: const TextStyle(fontSize: 10, color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis)),
-                const Icon(Icons.favorite_border_rounded, size: 12, color: AppColors.textSecondary),
+                Expanded(
+                    child: Text(
+                        name.isNotEmpty
+                            ? name.split(' ').first
+                            : (project.projectType ?? ''),
+                        style: const TextStyle(
+                            fontSize: 10, color: AppColors.textSecondary),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis)),
+                const Icon(Icons.favorite_border_rounded,
+                    size: 12, color: AppColors.textSecondary),
               ]),
             ]),
           ),
@@ -977,8 +1707,12 @@ class _AppBarIcon extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 34, height: 34,
-        decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.border, width: 1.5), color: AppColors.background),
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: AppColors.border, width: 1.5),
+            color: AppColors.background),
         child: Icon(icon, size: 18, color: AppColors.textSecondary),
       ),
     );
@@ -994,24 +1728,52 @@ class _DesignerChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: SizedBox(width: 72, child: Column(children: [
-        Container(
-          width: 58, height: 58,
-          decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0xFF0E5A3A).withOpacity(0.3), width: 2)),
-          clipBehavior: Clip.hardEdge,
-          child: designer.avatarUrl != null && designer.avatarUrl!.isNotEmpty
-              ? SmartImage(url: designer.avatarUrl, fit: BoxFit.cover)
-              : Container(color: const Color(0xFF0E5A3A).withOpacity(0.1),
-                  child: Center(child: Text(designer.displayName.substring(0, 1).toUpperCase(),
-                      style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0E5A3A), fontSize: 22)))),
-        ),
-        const SizedBox(height: 6),
-        Text(designer.displayName.split(' ').first, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textPrimary), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
-        if (designer.specialty != null) ...[
-          const SizedBox(height: 1),
-          Text(designer.specialty!, style: const TextStyle(fontSize: 9, color: AppColors.textSecondary), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
-        ],
-      ])),
+      child: SizedBox(
+          width: 72,
+          child: Column(children: [
+            Container(
+              width: 58,
+              height: 58,
+              decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                      color: const Color(0xFF0E5A3A).withOpacity(0.3),
+                      width: 2)),
+              clipBehavior: Clip.hardEdge,
+              child:
+                  designer.avatarUrl != null && designer.avatarUrl!.isNotEmpty
+                      ? SmartImage(url: designer.avatarUrl, fit: BoxFit.cover)
+                      : Container(
+                          color: const Color(0xFF0E5A3A).withOpacity(0.1),
+                          child: Center(
+                              child: Text(
+                                  designer.displayName
+                                      .substring(0, 1)
+                                      .toUpperCase(),
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF0E5A3A),
+                                      fontSize: 22)))),
+            ),
+            const SizedBox(height: 6),
+            Text(designer.displayName.split(' ').first,
+                style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+            if (designer.specialty != null) ...[
+              const SizedBox(height: 1),
+              Text(designer.specialty!,
+                  style: const TextStyle(
+                      fontSize: 9, color: AppColors.textSecondary),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis),
+            ],
+          ])),
     );
   }
 }
@@ -1024,7 +1786,9 @@ class _SkeletonBox extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: height,
-      decoration: BoxDecoration(color: AppColors.border.withOpacity(0.5), borderRadius: BorderRadius.circular(16)),
+      decoration: BoxDecoration(
+          color: AppColors.border.withOpacity(0.5),
+          borderRadius: BorderRadius.circular(16)),
     );
   }
 }
@@ -1034,10 +1798,22 @@ class _SkeletonAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(width: 72, child: Column(children: [
-      Container(width: 58, height: 58, decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.border.withOpacity(0.5))),
-      const SizedBox(height: 6),
-      Container(width: 48, height: 10, decoration: BoxDecoration(color: AppColors.border.withOpacity(0.5), borderRadius: BorderRadius.circular(4))),
-    ]));
+    return SizedBox(
+        width: 72,
+        child: Column(children: [
+          Container(
+              width: 58,
+              height: 58,
+              decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.border.withOpacity(0.5))),
+          const SizedBox(height: 6),
+          Container(
+              width: 48,
+              height: 10,
+              decoration: BoxDecoration(
+                  color: AppColors.border.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(4))),
+        ]));
   }
 }

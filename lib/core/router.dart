@@ -31,6 +31,7 @@ import '../screens/forum/forum_screen.dart';
 import '../screens/forum/topic_detail_screen.dart';
 import '../screens/profile/profile_settings_screen.dart';
 import '../screens/profile/collections_screen.dart';
+import '../services/search_filters.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final _shellNavigatorKey = GlobalKey<NavigatorState>();
@@ -183,7 +184,10 @@ GoRouter buildRouter() {
       GoRoute(
         path: '/designers-list',
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (_, __) => const DesignersScreen(),
+        builder: (_, state) => DesignersScreen(
+          initialQuery: state.uri.queryParameters['q'],
+          initialFilters: SearchFilters.fromQuery(state.uri.queryParameters),
+        ),
       ),
       GoRoute(
         path: '/chat/:conversationId',
@@ -221,8 +225,10 @@ GoRouter buildRouter() {
       ),
       // Main shell with bottom nav (4 branches: Home, Explore, Messages, Profile)
       StatefulShellRoute.indexedStack(
-        builder: (context, state, navigationShell) =>
-            MainShell(navigationShell: navigationShell),
+        builder: (context, state, navigationShell) => MainShell(
+          navigationShell: navigationShell,
+          uri: state.uri,
+        ),
         branches: [
           // 0 - Home
           StatefulShellBranch(
@@ -235,7 +241,13 @@ GoRouter buildRouter() {
           StatefulShellBranch(
             routes: [
               GoRoute(
-                  path: '/explore', builder: (_, __) => const ExploreScreen())
+                path: '/explore',
+                builder: (_, state) => ExploreScreen(
+                  initialQuery: state.uri.queryParameters['q'],
+                  initialFilters:
+                      SearchFilters.fromQuery(state.uri.queryParameters),
+                ),
+              )
             ],
           ),
           // 2 - Messages (visual index 3)
