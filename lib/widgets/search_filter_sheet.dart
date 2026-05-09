@@ -5,16 +5,20 @@ import '../services/search_filters.dart';
 
 enum SearchFilterSheetMode { home, designers, explore }
 
+enum SearchFilterSheetContent { filters, sort, all }
+
 class SearchFilterSheet extends StatefulWidget {
   final SearchFilters filters;
   final SearchFilterSheetMode mode;
   final bool expandSort;
+  final SearchFilterSheetContent content;
 
   const SearchFilterSheet({
     super.key,
     required this.filters,
     this.mode = SearchFilterSheetMode.home,
     this.expandSort = false,
+    this.content = SearchFilterSheetContent.all,
   });
 
   @override
@@ -32,12 +36,18 @@ class _SearchFilterSheetState extends State<SearchFilterSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final showSort = _showSort;
+    final showFilters = _showFilters;
+
     return SafeArea(
       child: DraggableScrollableSheet(
         expand: false,
-        initialChildSize: 0.82,
-        minChildSize: 0.45,
-        maxChildSize: 0.94,
+        initialChildSize:
+            widget.content == SearchFilterSheetContent.sort ? 0.38 : 0.82,
+        minChildSize:
+            widget.content == SearchFilterSheetContent.sort ? 0.26 : 0.45,
+        maxChildSize:
+            widget.content == SearchFilterSheetContent.sort ? 0.58 : 0.94,
         builder: (context, controller) {
           return Column(
             children: [
@@ -58,9 +68,7 @@ class _SearchFilterSheetState extends State<SearchFilterSheet> {
                       children: [
                         Expanded(
                           child: Text(
-                            _sortOptions.isEmpty
-                                ? 'Filtreleme'
-                                : 'Filtreleme ve Sıralama',
+                            _title,
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w800,
@@ -70,7 +78,7 @@ class _SearchFilterSheetState extends State<SearchFilterSheet> {
                         ),
                         TextButton(
                           onPressed: () => setState(
-                            () => _filters = const SearchFilters(),
+                            _clearVisibleContent,
                           ),
                           child: const Text('Temizle'),
                         ),
@@ -84,15 +92,19 @@ class _SearchFilterSheetState extends State<SearchFilterSheet> {
                   controller: controller,
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
                   children: [
-                    _SortSection(
-                      selectedValue: _filters.sortBy,
-                      options: _sortOptions,
-                      initiallyExpanded: widget.expandSort,
-                      onChanged: (value) => setState(
-                        () => _filters = _filters.copyWith(sortBy: value),
+                    if (showSort)
+                      _SortSection(
+                        selectedValue: _filters.sortBy,
+                        options: _sortOptions,
+                        initiallyExpanded:
+                            widget.content == SearchFilterSheetContent.sort ||
+                                widget.expandSort,
+                        onChanged: (value) => setState(
+                          () => _filters = _filters.copyWith(sortBy: value),
+                        ),
                       ),
-                    ),
-                    if (widget.mode == SearchFilterSheetMode.home) ...[
+                    if (showFilters &&
+                        widget.mode == SearchFilterSheetMode.home) ...[
                       SearchMultiSelectSection(
                         title: 'Mekan',
                         selectedValues: _filters.rooms,
@@ -175,8 +187,8 @@ class _SearchFilterSheetState extends State<SearchFilterSheet> {
                           ),
                         ),
                       ),
-                    ] else if (widget.mode ==
-                        SearchFilterSheetMode.designers) ...[
+                    ] else if (showFilters &&
+                        widget.mode == SearchFilterSheetMode.designers) ...[
                       SearchMultiSelectSection(
                         title: 'Profesyonel Türü',
                         selectedValues: _filters.professionals,
@@ -258,7 +270,7 @@ class _SearchFilterSheetState extends State<SearchFilterSheet> {
                               _filters = _filters.copyWith(hasProjects: value),
                         ),
                       ),
-                    ] else ...[
+                    ] else if (showFilters) ...[
                       SearchMultiSelectSection(
                         title: 'Stil',
                         selectedValues: _filters.styles,
@@ -308,6 +320,49 @@ class _SearchFilterSheetState extends State<SearchFilterSheet> {
       SearchFilterSheetMode.designers => SearchFilters.designerSortOptions,
       SearchFilterSheetMode.home => SearchFilters.sortOptions,
     };
+  }
+
+  bool get _showSort =>
+      widget.content == SearchFilterSheetContent.sort ||
+      widget.content == SearchFilterSheetContent.all;
+
+  bool get _showFilters =>
+      widget.content == SearchFilterSheetContent.filters ||
+      widget.content == SearchFilterSheetContent.all;
+
+  String get _title {
+    return switch (widget.content) {
+      SearchFilterSheetContent.sort => 'Sıralama',
+      SearchFilterSheetContent.filters => 'Filtreleme',
+      SearchFilterSheetContent.all =>
+        _sortOptions.isEmpty ? 'Filtreleme' : 'Filtreleme ve Sıralama',
+    };
+  }
+
+  void _clearVisibleContent() {
+    if (widget.content == SearchFilterSheetContent.sort) {
+      _filters = _filters.copyWith(clearSort: true);
+      return;
+    }
+
+    if (widget.content == SearchFilterSheetContent.filters) {
+      _filters = _filters.copyWith(
+        clearRooms: true,
+        clearStyles: true,
+        clearBudgets: true,
+        clearCities: true,
+        clearProfessionals: true,
+        clearServices: true,
+        clearProjectTypes: true,
+        clearServiceRegions: true,
+        onlyProfessionals: false,
+        onlyProjects: false,
+        hasProjects: false,
+      );
+      return;
+    }
+
+    _filters = const SearchFilters();
   }
 }
 

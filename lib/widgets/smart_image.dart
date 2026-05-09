@@ -23,8 +23,7 @@ class SmartImage extends StatelessWidget {
     this.errorWidget,
   });
 
-  static bool isDataUrl(String? url) =>
-      url != null && url.startsWith('data:');
+  static bool isDataUrl(String? url) => url != null && url.startsWith('data:');
 
   @override
   Widget build(BuildContext context) {
@@ -43,6 +42,9 @@ class SmartImage extends StatelessWidget {
       fit: fit,
       width: width,
       height: height,
+      fadeInDuration: Duration.zero,
+      fadeOutDuration: Duration.zero,
+      useOldImageOnUrlChange: true,
       placeholder: (_, __) => placeholder ?? const ShimmerCard(borderRadius: 0),
       errorWidget: (_, __, ___) => errorWidget ?? _fallback(),
     );

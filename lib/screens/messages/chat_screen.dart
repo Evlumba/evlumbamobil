@@ -7,6 +7,7 @@ import '../../core/supabase_client.dart';
 import '../../core/theme.dart';
 import '../../models/message.dart';
 import '../../services/moderation_service.dart';
+import '../../services/push_notification_service.dart';
 import '../../widgets/report_block_sheet.dart';
 import '../../widgets/smart_image.dart';
 
@@ -124,11 +125,20 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() => _sending = true);
     _messageController.clear();
     try {
-      await supabase.from('messages').insert({
-        'conversation_id': widget.conversationId,
-        'sender_id': currentUser.id,
-        'body': body,
-      });
+      final inserted = await supabase
+          .from('messages')
+          .insert({
+            'conversation_id': widget.conversationId,
+            'sender_id': currentUser.id,
+            'body': body,
+          })
+          .select('id')
+          .single();
+      final messageId = inserted['id'] as String?;
+      if (messageId != null && messageId.isNotEmpty) {
+        unawaited(
+            PushNotificationService.instance.notifyMessageCreated(messageId));
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

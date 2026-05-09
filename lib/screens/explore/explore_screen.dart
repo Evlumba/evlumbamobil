@@ -8,6 +8,7 @@ import '../../core/theme.dart';
 import '../../models/designer_project.dart';
 import '../../services/search_filters.dart';
 import '../../services/semantic_search_service.dart';
+import '../../widgets/filter_exit_dialog.dart';
 import '../../widgets/search_active_filter_chips.dart';
 import '../../widgets/search_filter_sheet.dart';
 import '../../widgets/project_card.dart';
@@ -76,7 +77,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     return count < 0 ? 0 : count;
   }
 
-  bool get _shouldConfirmLeaving => _filters.hasAny || _searchQuery.isNotEmpty;
+  bool get _shouldConfirmLeaving => _filters.hasAny;
 
   @override
   void initState() {
@@ -420,12 +421,18 @@ class _ExploreScreenState extends State<ExploreScreen> {
         filters: _filters,
         mode: SearchFilterSheetMode.explore,
         expandSort: expandSort,
+        content: expandSort
+            ? SearchFilterSheetContent.sort
+            : SearchFilterSheetContent.filters,
       ),
     );
 
     if (result == null || !mounted) return;
+    final nextFilters = expandSort
+        ? _filters.copyWith(sortBy: result.sortBy)
+        : result.copyWith(clearProfessionals: true);
     setState(() {
-      _filters = result.copyWith(clearProfessionals: true);
+      _filters = nextFilters;
       _selectedCategory =
           _filters.rooms.length == 1 ? _filters.rooms.first : 'Tümü';
     });
@@ -433,26 +440,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   Future<bool> _confirmFilterExit() async {
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Filtreler temizlenecek'),
-        content: const Text(
-          'Bu sayfadan çıkarsanız uyguladığınız filtreler temizlenecek. Emin misiniz?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Vazgeç'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Evet, çık'),
-          ),
-        ],
-      ),
-    );
-    return result ?? false;
+    return showFilterExitDialog(context);
   }
 
   Future<void> _handleFilteredPop() async {
@@ -460,7 +448,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
     if (!mounted || !confirmed) return;
     _searchDebounce?.cancel();
     _searchController.clear();
-    _searchDebounce?.cancel();
     setState(() {
       _leaveConfirmed = true;
       _filters = const SearchFilters();

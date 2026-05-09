@@ -676,7 +676,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (result == null || !mounted) return;
     setState(() => _homeFilters = result);
-    _runHomeSearch(result, _homeSearchController.text);
+    unawaited(_runHomeSearch(result, _homeSearchController.text));
   }
 
   void _removeHomeFilter(String key, String value) {
@@ -686,7 +686,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _submitHomeSearch(String value) {
-    _runHomeSearch(_homeFilters, value);
+    unawaited(_runHomeSearch(_homeFilters, value));
   }
 
   void _clearHomeSearchAfterNavigation(SearchFilters filters, String query) {
@@ -706,7 +706,7 @@ class _HomeScreenState extends State<HomeScreen> {
     context.push(route);
   }
 
-  void _runHomeSearch(SearchFilters filters, String value) {
+  Future<void> _runHomeSearch(SearchFilters filters, String value) async {
     final query = value.trim();
     if (query.isEmpty && !filters.hasAny) {
       context.push('/explore');
@@ -741,6 +741,21 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    final shouldCheckDesignerName = query.isNotEmpty &&
+        !SearchIntentService.isProfessionalQuery(query) &&
+        !SearchIntentService.isProjectQuery(query);
+    if (shouldCheckDesignerName && await _hasDesignerNameMatch(query)) {
+      if (!mounted) return;
+      final params = filters.designerParams(query);
+      final queryString = SearchFilters.routeQuery(params);
+      _pushHomeSearchRoute(
+        '/designers-list${queryString.isEmpty ? '' : '?$queryString'}',
+        filters,
+        query,
+      );
+      return;
+    }
+
     final params = filters.projectParams(query);
     final queryString = SearchFilters.routeQuery(params);
     _pushHomeSearchRoute(
@@ -748,6 +763,48 @@ class _HomeScreenState extends State<HomeScreen> {
       filters,
       query,
     );
+  }
+
+  Future<bool> _hasDesignerNameMatch(String query) async {
+    final terms = <String>{
+      query.trim(),
+      ...SearchIntentService.queryTokens(query),
+    }
+        .map(_designerLookupTerm)
+        .where((term) => term.length >= 2)
+        .take(4)
+        .toList();
+
+    if (terms.isEmpty) return false;
+
+    final filter = terms
+        .expand(
+          (term) => [
+            'full_name.ilike.*$term*',
+            'business_name.ilike.*$term*',
+            'slug.ilike.*$term*',
+          ],
+        )
+        .join(',');
+
+    try {
+      final data = await supabase
+          .from('profiles')
+          .select('id')
+          .inFilter('role', ['designer', 'designer_pending'])
+          .or(filter)
+          .limit(1);
+      return (data as List).isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  String _designerLookupTerm(String value) {
+    return value
+        .trim()
+        .replaceAll(RegExp(r'[%*,()]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ');
   }
 
   // ── Hero Banner ──────────────────────────────────────────────

@@ -629,138 +629,164 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   Widget _buildCarousel(List<String> allImages, List<ShopLink> hotspots) {
     return SizedBox(
       height: 320,
-      child: Stack(
-        children: [
-          // Images
-          PageView.builder(
-            controller: _pageController,
-            itemCount: allImages.length,
-            onPageChanged: (i) {
-              setState(() {
-                _currentImageIndex = i;
-                _activeShopLink = null;
-              });
-              // Scroll thumbnail into view
-              _thumbController.animateTo(
-                i * 72.0,
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeInOut,
-              );
-            },
-            itemBuilder: (_, index) =>
-                SmartImage(url: allImages[index], fit: BoxFit.cover),
-          ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final carouselWidth = constraints.maxWidth;
 
-          // Hotspot dots
-          ...hotspots.map((link) {
-            final screenWidth = MediaQuery.of(context).size.width;
-            return Positioned(
-              left: (link.posX / 100) * screenWidth - 14,
-              top: (link.posY / 100) * 320 - 14,
-              child: GestureDetector(
-                onTap: () => setState(
-                  () => _activeShopLink =
-                      _activeShopLink?.id == link.id ? null : link,
-                ),
-                child: _HotspotDot(isActive: _activeShopLink?.id == link.id),
-              ),
-            );
-          }),
-
-          // Shop link overlay card
-          if (_activeShopLink != null)
-            Positioned(
-              bottom: 44,
-              left: 16,
-              right: 16,
-              child: _ShopLinkOverlay(
-                link: _activeShopLink!,
-                onBuy: () => _launchUrl(_activeShopLink!.productUrl),
-                onDismiss: () => setState(() => _activeShopLink = null),
-              ),
-            ),
-
-          // Pagination dots
-          if (allImages.length > 1)
-            Positioned(
-              bottom: 12,
-              left: 0,
-              right: 0,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(
-                  allImages.length,
-                  (i) => Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 3),
-                    width: i == _currentImageIndex ? 16 : 6,
-                    height: 6,
-                    decoration: BoxDecoration(
-                      color: i == _currentImageIndex
-                          ? Colors.white
-                          : Colors.white.withOpacity(0.5),
-                      borderRadius: BorderRadius.circular(3),
+          return Stack(
+            clipBehavior: Clip.hardEdge,
+            children: [
+              // Images
+              RepaintBoundary(
+                child: PageView.builder(
+                  controller: _pageController,
+                  itemCount: allImages.length,
+                  onPageChanged: (i) {
+                    setState(() {
+                      _currentImageIndex = i;
+                      _activeShopLink = null;
+                    });
+                    // Scroll thumbnail into view
+                    if (_thumbController.hasClients) {
+                      _thumbController.animateTo(
+                        i * 72.0,
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                      );
+                    }
+                  },
+                  itemBuilder: (_, index) => RepaintBoundary(
+                    child: SmartImage(
+                      key: ValueKey('project-image-${allImages[index]}'),
+                      url: allImages[index],
+                      width: double.infinity,
+                      height: 320,
+                      fit: BoxFit.cover,
                     ),
                   ),
                 ),
               ),
-            ),
 
-          // Prev arrow
-          if (_currentImageIndex > 0)
-            Positioned(
-              left: 8,
-              top: 0,
-              bottom: 0,
-              child: Center(
-                child: GestureDetector(
-                  onTap: () => _pageController.previousPage(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.3),
-                      shape: BoxShape.circle,
+              // Hotspot dots
+              ...hotspots.map((link) {
+                final left =
+                    ((link.posX.clamp(0, 100) / 100) * carouselWidth) - 16;
+                final top = ((link.posY.clamp(0, 100) / 100) * 320) - 16;
+                return Positioned(
+                  left: left.clamp(8, carouselWidth - 40),
+                  top: top.clamp(8, 280),
+                  child: RepaintBoundary(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => setState(
+                        () => _activeShopLink =
+                            _activeShopLink?.id == link.id ? null : link,
+                      ),
+                      child:
+                          _HotspotDot(isActive: _activeShopLink?.id == link.id),
                     ),
-                    child: const Icon(
-                      Icons.chevron_left,
-                      color: Colors.white,
-                      size: 20,
+                  ),
+                );
+              }),
+
+              // Shop link overlay card
+              if (_activeShopLink != null)
+                Positioned(
+                  bottom: 44,
+                  left: 16,
+                  right: 16,
+                  child: RepaintBoundary(
+                    child: _ShopLinkOverlay(
+                      link: _activeShopLink!,
+                      onBuy: () => _launchUrl(_activeShopLink!.productUrl),
+                      onDismiss: () => setState(() => _activeShopLink = null),
                     ),
                   ),
                 ),
-              ),
-            ),
 
-          // Next arrow
-          if (_currentImageIndex < allImages.length - 1)
-            Positioned(
-              right: 8,
-              top: 0,
-              bottom: 0,
-              child: Center(
-                child: GestureDetector(
-                  onTap: () => _pageController.nextPage(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.3),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.chevron_right,
-                      color: Colors.white,
-                      size: 20,
+              // Pagination dots
+              if (allImages.length > 1)
+                Positioned(
+                  bottom: 12,
+                  left: 0,
+                  right: 0,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(
+                      allImages.length,
+                      (i) => Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                        width: i == _currentImageIndex ? 16 : 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: i == _currentImageIndex
+                              ? Colors.white
+                              : Colors.white.withOpacity(0.5),
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
-        ],
+
+              // Prev arrow
+              if (_currentImageIndex > 0)
+                Positioned(
+                  left: 8,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: GestureDetector(
+                      onTap: () => _pageController.previousPage(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.3),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.chevron_left,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+              // Next arrow
+              if (_currentImageIndex < allImages.length - 1)
+                Positioned(
+                  right: 8,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: GestureDetector(
+                      onTap: () => _pageController.nextPage(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.3),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.chevron_right,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -1057,62 +1083,48 @@ class _ShareOption extends StatelessWidget {
   }
 }
 
-// ── Hotspot dot with pulse animation ──────────────────────────────────────────
+// ── Hotspot dot ───────────────────────────────────────────────────────────────
 
-class _HotspotDot extends StatefulWidget {
+class _HotspotDot extends StatelessWidget {
   final bool isActive;
 
   const _HotspotDot({required this.isActive});
 
   @override
-  State<_HotspotDot> createState() => _HotspotDotState();
-}
-
-class _HotspotDotState extends State<_HotspotDot>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  late Animation<double> _anim;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat(reverse: true);
-    _anim = Tween<double>(
-      begin: 0.4,
-      end: 1.0,
-    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _anim,
-      builder: (_, __) => Container(
-        width: 28,
-        height: 28,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: AppColors.primary
-              .withOpacity(widget.isActive ? 0.95 : 0.65 * _anim.value),
-          border: Border.all(color: Colors.white, width: 2),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primary.withOpacity(0.45 * _anim.value),
-              blurRadius: 10,
-              spreadRadius: 3,
-            ),
-          ],
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOut,
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white.withOpacity(0.88),
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isActive ? 0.20 : 0.12),
+            blurRadius: isActive ? 16 : 10,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Center(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOut,
+          width: isActive ? 22 : 18,
+          height: isActive ? 22 : 18,
+          decoration: const BoxDecoration(
+            color: AppColors.primary,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            isActive ? Icons.close : Icons.add,
+            color: Colors.white,
+            size: 13,
+          ),
         ),
-        child: const Icon(Icons.add, color: Colors.white, size: 14),
       ),
     );
   }

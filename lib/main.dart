@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -7,11 +9,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/theme.dart';
 import 'core/router.dart';
+import 'services/push_notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await dotenv.load(fileName: '.env');
+  await PushNotificationService.configureBackgroundHandling();
 
   final supabaseUrl = dotenv.env['SUPABASE_URL'] ?? '';
   final supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'] ?? '';
@@ -23,6 +27,7 @@ Future<void> main() async {
       authFlowType: AuthFlowType.implicit,
     ),
   );
+  unawaited(PushNotificationService.instance.initialize());
 
   runApp(
     const ProviderScope(
@@ -45,6 +50,7 @@ class _EvlumbaAppState extends State<EvlumbaApp> {
   @override
   void initState() {
     super.initState();
+    PushNotificationService.instance.attachRouter(_router);
     _handleIncomingLinks();
   }
 

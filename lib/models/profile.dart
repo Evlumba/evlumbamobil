@@ -1,5 +1,6 @@
 class Profile {
   final String id;
+  final String? slug;
   final String? fullName;
   final String role;
   final String? avatarUrl;
@@ -33,6 +34,7 @@ class Profile {
 
   const Profile({
     required this.id,
+    this.slug,
     this.fullName,
     required this.role,
     this.avatarUrl,
@@ -93,6 +95,7 @@ class Profile {
 
     return Profile(
       id: json['id'] as String,
+      slug: json['slug'] as String?,
       fullName: fullName,
       role: (json['role'] as String?) ?? 'homeowner',
       avatarUrl: profileImageUrl,
@@ -139,6 +142,7 @@ class Profile {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'slug': slug,
       'full_name': fullName,
       'role': role,
       'avatar_url': avatarUrl,
@@ -175,6 +179,7 @@ class Profile {
 
   Profile copyWith({
     String? fullName,
+    String? slug,
     String? role,
     String? avatarUrl,
     String? businessName,
@@ -206,6 +211,7 @@ class Profile {
   }) {
     return Profile(
       id: id,
+      slug: slug ?? this.slug,
       fullName: fullName ?? this.fullName,
       role: role ?? this.role,
       avatarUrl: avatarUrl ?? this.avatarUrl,

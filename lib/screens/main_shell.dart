@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/theme.dart';
 import '../services/search_filters.dart';
+import '../widgets/filter_exit_dialog.dart';
 
 const _kPrimary = Color(0xFF0E5A3A);
 
@@ -24,31 +25,11 @@ class MainShell extends StatelessWidget {
   }
 
   bool get _hasRouteFilters {
-    final hasQuery = (uri.queryParameters['q'] ?? '').trim().isNotEmpty;
-    return hasQuery || SearchFilters.fromQuery(uri.queryParameters).hasAny;
+    return SearchFilters.fromQuery(uri.queryParameters).hasAny;
   }
 
   Future<bool> _confirmFilterExit(BuildContext context) async {
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Filtreler temizlenecek'),
-        content: const Text(
-          'Bu sayfadan çıkarsanız uyguladığınız filtreler temizlenecek. Emin misiniz?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Vazgeç'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Evet, çık'),
-          ),
-        ],
-      ),
-    );
-    return result ?? false;
+    return showFilterExitDialog(context);
   }
 
   void _onTap(BuildContext context, int visualIndex) async {

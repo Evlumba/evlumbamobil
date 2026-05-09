@@ -76,6 +76,21 @@ class SearchIntentService {
     return !hasProjectTerm || professionalCount >= projectCount;
   }
 
+  static bool isProjectQuery(String query) {
+    final tokens = queryTokens(query);
+    if (tokens.isEmpty) return false;
+
+    final hasProjectTerm = tokens.any(_projectTerms.contains);
+    if (!hasProjectTerm) return false;
+
+    final hasProfessionalTerm = tokens.any(_professionalTerms.contains);
+    if (!hasProfessionalTerm) return true;
+
+    final professionalCount = tokens.where(_professionalTerms.contains).length;
+    final projectCount = tokens.where(_projectTerms.contains).length;
+    return projectCount > professionalCount;
+  }
+
   static List<String> queryTokens(String value) {
     return normalize(value)
         .split(RegExp(r'[^a-z0-9]+'))

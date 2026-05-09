@@ -12,6 +12,7 @@ import '../../services/semantic_search_service.dart';
 import '../../widgets/search_active_filter_chips.dart';
 import '../../widgets/search_filter_sheet.dart';
 import '../../widgets/designer_card.dart';
+import '../../widgets/filter_exit_dialog.dart';
 import '../../widgets/shimmer_card.dart';
 
 class DesignersScreen extends StatefulWidget {
@@ -53,6 +54,7 @@ class _DesignersScreenState extends State<DesignersScreen> {
   List<String>? _semanticDesignerIds;
   bool _searching = false;
   bool _leaveConfirmed = false;
+  static const _profilePageSize = 1000;
 
   SearchFilters _filters = const SearchFilters();
 
@@ -62,8 +64,7 @@ class _DesignersScreenState extends State<DesignersScreen> {
     return count < 0 ? 0 : count;
   }
 
-  bool get _hasSearchQuery => _searchController.text.trim().isNotEmpty;
-  bool get _shouldConfirmLeaving => _filters.hasAny || _hasSearchQuery;
+  bool get _shouldConfirmLeaving => _filters.hasAny;
 
   @override
   void initState() {
@@ -189,7 +190,7 @@ class _DesignersScreenState extends State<DesignersScreen> {
         final cities = d.profile.cities.isNotEmpty
             ? d.profile.cities
             : [if ((d.profile.city ?? '').trim().isNotEmpty) d.profile.city!];
-        if (!_filters.cities.any(cities.contains)) return false;
+        if (!_matchesAnySelected(cities, _filters.cities)) return false;
       }
 
       if (_filters.professionals.isNotEmpty &&
@@ -200,22 +201,25 @@ class _DesignersScreenState extends State<DesignersScreen> {
       }
 
       if (_filters.services.isNotEmpty &&
-          !_filters.services.any(d.profile.services.contains)) {
+          !_matchesAnySelected(d.profile.services, _filters.services)) {
         return false;
       }
 
       if (_filters.projectTypes.isNotEmpty &&
-          !_filters.projectTypes.any(d.profile.projectTypes.contains)) {
+          !_matchesAnySelected(d.profile.projectTypes, _filters.projectTypes)) {
         return false;
       }
 
       if (_filters.rooms.isNotEmpty &&
-          !_filters.rooms.any(d.profile.serviceAreas.contains)) {
+          !_matchesAnySelected(d.profile.serviceAreas, _filters.rooms)) {
         return false;
       }
 
       if (_filters.serviceRegions.isNotEmpty &&
-          !_filters.serviceRegions.any(d.profile.serviceRegions.contains)) {
+          !_matchesAnySelected(
+            d.profile.serviceRegions,
+            _filters.serviceRegions,
+          )) {
         return false;
       }
 
@@ -227,6 +231,15 @@ class _DesignersScreenState extends State<DesignersScreen> {
     }).toList();
 
     return _applySelectedSort(filtered);
+  }
+
+  bool _matchesAnySelected(List<String> values, List<String> selectedValues) {
+    if (selectedValues.isEmpty) return true;
+    if (values.isEmpty) return false;
+    final normalizedValues = values.map(SearchIntentService.normalize).toSet();
+    return selectedValues
+        .map(SearchIntentService.normalize)
+        .any(normalizedValues.contains);
   }
 
   List<_DesignerData> _applySelectedSort(List<_DesignerData> designers) {
@@ -369,21 +382,119 @@ class _DesignersScreenState extends State<DesignersScreen> {
   }
 
   bool _matchesProfessionalFilter(_DesignerData d, String professional) {
-    final normalized = SearchIntentService.normalize(professional);
-    if (normalized == 'mimar' || normalized == 'tasarimci') {
-      return d.profile.isDesigner;
+    final acceptedTypes = _acceptedProfessionalTypes(professional);
+    final normalizedTypes =
+        d.profile.professionalTypes.map(SearchIntentService.normalize).toSet();
+
+    if (normalizedTypes.isNotEmpty) {
+      return acceptedTypes.any(normalizedTypes.contains);
     }
 
-    final tokens = SearchIntentService.queryTokens(professional);
-    if (d.profile.professionalTypes.contains(professional)) return true;
-    final specialtyText = SearchIntentService.normalize([
+    final legacyText = SearchIntentService.normalize([
       d.profile.specialty ?? '',
       d.profile.about ?? '',
       d.profile.tags.join(' '),
-      d.profile.professionalTypes.join(' '),
     ].join(' '));
 
-    return tokens.every(specialtyText.contains);
+    if (legacyText.isEmpty) return false;
+    return _matchesProfessionalLegacyText(legacyText, professional);
+  }
+
+  Set<String> _acceptedProfessionalTypes(String professional) {
+    final normalized = SearchIntentService.normalize(professional);
+    final aliases = <String>{normalized};
+    switch (normalized) {
+      case 'mimar':
+        aliases.addAll({
+          'mimarlik firmasi',
+          'mimari tasarimci',
+        });
+        break;
+      case 'ic mimar':
+        aliases.addAll({
+          'ic mimarlik ofisi',
+          'ic mimarlik burosu',
+        });
+        break;
+      case 'usta uygulamaci':
+        aliases.addAll({
+          'ev tadilati firmasi',
+          'tadilat firmasi',
+        });
+        break;
+    }
+    return aliases;
+  }
+
+  bool _matchesProfessionalLegacyText(
+    String legacyText,
+    String professional,
+  ) {
+    final normalized = SearchIntentService.normalize(professional);
+    final legacyTokens = legacyText
+        .split(RegExp(r'[^a-z0-9]+'))
+        .where((token) => token.isNotEmpty)
+        .toSet();
+
+    switch (normalized) {
+      case 'mimar':
+        return legacyText.contains('mimarlik firmasi') ||
+            legacyText.contains('mimari tasarimci') ||
+            legacyText.contains('architect') ||
+            (legacyTokens.contains('mimar') &&
+                !legacyText.contains('ic mimar') &&
+                !legacyText.contains('ic mimarlik'));
+      case 'ic mimar':
+        return legacyText.contains('ic mimar') ||
+            legacyText.contains('ic mimarlik') ||
+            legacyText.contains('interior architect') ||
+            legacyText.contains('interior design');
+    }
+
+    return _acceptedProfessionalLegacyTerms(professional)
+        .any(legacyTokens.contains);
+  }
+
+  Set<String> _acceptedProfessionalLegacyTerms(String professional) {
+    final normalized = SearchIntentService.normalize(professional);
+    return switch (normalized) {
+      'mimar' => {'mimar', 'mimarlik'},
+      'ic mimar' => {'mimar', 'mimarlik'},
+      'ic dekorator' => {'dekorator', 'dekorasyon'},
+      'peyzaj mimari' => {'peyzaj'},
+      'tasarim ofisi' => {'tasarim'},
+      'mimarlik firmasi' => {'mimarlik'},
+      'ic mimarlik ofisi' => {'mimarlik'},
+      'ic mimarlik burosu' => {'mimarlik'},
+      'mimari tasarimci' => {'mimari', 'mimar'},
+      'konsept tasarimci' => {'konsept'},
+      '3d gorsellestirme uzmani' => {'3d', 'render', 'gorsellestirme'},
+      'mimari maket hizmeti' => {'maket'},
+      'aydinlatma tasarimcisi' => {'aydinlatma'},
+      'tadilat firmasi' => {'tadilat'},
+      'ev tadilati firmasi' => {'tadilat'},
+      'anahtar teslim firma' => {'anahtar'},
+      'banyo mutfak uygulamacisi' => {'banyo', 'mutfak'},
+      'usta uygulamaci' => {'usta', 'uygulama', 'uygulamaci'},
+      'marangoz ozel mobilya' => {'marangoz'},
+      'mobilya ureticisi' => {'mobilya', 'uretici'},
+      'mobilya imalatcisi' => {'mobilya', 'imalat'},
+      'insaat sirketi' => {'insaat'},
+      'insaat firmasi' => {'insaat'},
+      'insaat muhendisi' => {'insaat', 'muhendis'},
+      'insaat danismani' => {'insaat', 'danisman'},
+      'yapi denetcisi' => {'denetim'},
+      'peyzaj uygulama firmasi' => {'peyzaj'},
+      'mobilya magazasi' => {'mobilya', 'magaza'},
+      'mutfak mobilyasi magazasi' => {'mutfak', 'mobilya'},
+      'yapi malzemeleri magazasi' => {'malzeme'},
+      'insaat malzemesi toptancisi' => {'insaat', 'malzeme', 'toptanci'},
+      'peyzaj malzemeleri saticisi' => {'peyzaj', 'malzeme'},
+      'malzeme urun tedarikcisi' => {'malzeme', 'tedarik'},
+      'aluminyum pencere sistemleri' => {'aluminyum', 'pencere'},
+      'kurumsal ofis' => {'ofis'},
+      _ => {normalized},
+    };
   }
 
   String _profileSearchText(_DesignerData d) {
@@ -393,6 +504,7 @@ class _DesignersScreenState extends State<DesignersScreen> {
 
     return SearchIntentService.normalize([
       d.profile.displayName,
+      d.profile.slug ?? '',
       d.profile.businessName ?? '',
       d.profile.specialty ?? '',
       d.profile.city ?? '',
@@ -420,37 +532,23 @@ class _DesignersScreenState extends State<DesignersScreen> {
         filters: _filters,
         mode: SearchFilterSheetMode.designers,
         expandSort: expandSort,
+        content: expandSort
+            ? SearchFilterSheetContent.sort
+            : SearchFilterSheetContent.filters,
       ),
     );
 
     if (result == null || !mounted) return;
+    final nextFilters =
+        expandSort ? _filters.copyWith(sortBy: result.sortBy) : result;
     setState(() {
-      _filters = result;
+      _filters = nextFilters;
       _filtered = _filterDesigners(_designers);
     });
   }
 
   Future<bool> _confirmFilterExit() async {
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Filtreler temizlenecek'),
-        content: const Text(
-          'Bu sayfadan çıkarsanız uyguladığınız filtreler temizlenecek. Emin misiniz?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Vazgeç'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Evet, çık'),
-          ),
-        ],
-      ),
-    );
-    return result ?? false;
+    return showFilterExitDialog(context);
   }
 
   Future<void> _handleFilteredPop() async {
@@ -479,26 +577,20 @@ class _DesignersScreenState extends State<DesignersScreen> {
     });
 
     try {
-      // Fetch profiles and ranking (aggregates + score) in parallel
-      final results = await Future.wait([
-        supabase
-            .from('profiles')
-            .select(
-              'id, full_name, role, avatar_url, business_name, specialty, city, about, cover_photo_url, tags, starting_from, about_details, created_at',
-            )
-            .inFilter('role', ['designer', 'designer_pending']),
-        supabase.rpc('get_ranked_designers', params: {
-          'p_limit': 10000,
-          'p_offset': 0,
-        }),
-      ]);
+      // Fetch profiles and ranking (aggregates + score) in parallel.
+      // Supabase/PostgREST caps a single select around 1000 rows, so profiles
+      // must be paged or late-created designers disappear from search.
+      final profilesFuture = _fetchDesignerProfiles();
+      final rankingFuture = supabase.rpc('get_ranked_designers', params: {
+        'p_limit': 10000,
+        'p_offset': 0,
+      });
 
-      final profiles = (results[0] as List)
-          .map((e) => Profile.fromJson(e as Map<String, dynamic>))
-          .toList();
+      final profiles = await profilesFuture;
+      final rankingRows = await rankingFuture;
 
       final rankingMap = <String, Map<String, dynamic>>{};
-      for (final row in (results[1] as List)) {
+      for (final row in rankingRows as List) {
         final map = row as Map<String, dynamic>;
         final id = map['designer_id'] as String?;
         if (id != null) rankingMap[id] = map;
@@ -532,6 +624,33 @@ class _DesignersScreenState extends State<DesignersScreen> {
         });
       }
     }
+  }
+
+  Future<List<Profile>> _fetchDesignerProfiles() async {
+    final profiles = <Profile>[];
+    var from = 0;
+
+    while (true) {
+      final data = await supabase
+          .from('profiles')
+          .select(
+            'id, slug, full_name, role, avatar_url, business_name, specialty, city, about, cover_photo_url, tags, starting_from, about_details, created_at',
+          )
+          .inFilter('role', ['designer', 'designer_pending'])
+          .order('created_at', ascending: true)
+          .order('id', ascending: true)
+          .range(from, from + _profilePageSize - 1);
+
+      final page = (data as List)
+          .map((e) => Profile.fromJson(e as Map<String, dynamic>))
+          .toList();
+      profiles.addAll(page);
+
+      if (page.length < _profilePageSize) break;
+      from += _profilePageSize;
+    }
+
+    return profiles;
   }
 
   @override
