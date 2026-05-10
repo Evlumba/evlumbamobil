@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -1132,7 +1135,7 @@ class _HotspotDot extends StatelessWidget {
 
 // ── Shop link overlay card ────────────────────────────────────────────────────
 
-class _ShopLinkOverlay extends StatelessWidget {
+class _ShopLinkOverlay extends StatefulWidget {
   final ShopLink link;
   final VoidCallback onBuy;
   final VoidCallback onDismiss;
@@ -1144,7 +1147,68 @@ class _ShopLinkOverlay extends StatelessWidget {
   });
 
   @override
+  State<_ShopLinkOverlay> createState() => _ShopLinkOverlayState();
+}
+
+class _ShopLinkOverlayState extends State<_ShopLinkOverlay> {
+  static final Map<String, String> _previewImageCache = {};
+
+  String _previewImageUrl = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPreviewImageIfNeeded();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ShopLinkOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.link.id != widget.link.id ||
+        oldWidget.link.productUrl != widget.link.productUrl ||
+        oldWidget.link.productImageUrl != widget.link.productImageUrl) {
+      _previewImageUrl = '';
+      _loadPreviewImageIfNeeded();
+    }
+  }
+
+  Future<void> _loadPreviewImageIfNeeded() async {
+    final existingImage = widget.link.productImageUrl?.trim() ?? '';
+    final productUrl = widget.link.productUrl.trim();
+    if (existingImage.isNotEmpty || productUrl.isEmpty) return;
+
+    final cachedImage = _previewImageCache[productUrl];
+    if (cachedImage != null) {
+      if (mounted) setState(() => _previewImageUrl = cachedImage);
+      return;
+    }
+
+    try {
+      final uri = Uri.https('www.evlumba.com', '/api/shop/preview', {
+        'url': productUrl,
+      });
+      final response = await http.get(uri);
+      if (response.statusCode != 200) return;
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (data['ok'] != true) return;
+
+      final image = (data['image'] as String? ?? '').trim();
+      if (image.isEmpty) return;
+
+      _previewImageCache[productUrl] = image;
+      if (mounted) setState(() => _previewImageUrl = image);
+    } catch (_) {
+      // Product previews are best-effort; keep the neutral placeholder on fail.
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final imageUrl = (widget.link.productImageUrl?.trim().isNotEmpty ?? false)
+        ? widget.link.productImageUrl!.trim()
+        : _previewImageUrl;
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -1160,11 +1224,11 @@ class _ShopLinkOverlay extends StatelessWidget {
       ),
       child: Row(
         children: [
-          if (link.productImageUrl != null && link.productImageUrl!.isNotEmpty)
+          if (imageUrl.isNotEmpty)
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: SmartImage(
-                url: link.productImageUrl,
+                url: imageUrl,
                 width: 56,
                 height: 56,
                 fit: BoxFit.cover,
@@ -1189,9 +1253,10 @@ class _ShopLinkOverlay extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (link.productTitle != null && link.productTitle!.isNotEmpty)
+                if (widget.link.productTitle != null &&
+                    widget.link.productTitle!.isNotEmpty)
                   Text(
-                    link.productTitle!,
+                    widget.link.productTitle!,
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -1200,11 +1265,11 @@ class _ShopLinkOverlay extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                if (link.productPrice != null &&
-                    link.productPrice!.isNotEmpty) ...[
+                if (widget.link.productPrice != null &&
+                    widget.link.productPrice!.isNotEmpty) ...[
                   const SizedBox(height: 2),
                   Text(
-                    link.productPrice!,
+                    widget.link.productPrice!,
                     style: const TextStyle(
                       fontSize: 13,
                       color: AppColors.textSecondary,
@@ -1216,7 +1281,7 @@ class _ShopLinkOverlay extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           ElevatedButton(
-            onPressed: onBuy,
+            onPressed: widget.onBuy,
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,

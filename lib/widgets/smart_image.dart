@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../core/theme.dart';
@@ -6,6 +8,9 @@ import 'shimmer_card.dart';
 
 /// Displays images from either a base64 data URL or a regular https URL.
 class SmartImage extends StatelessWidget {
+  static const int _maxCachedDataImages = 16;
+  static final Map<String, Uint8List> _decodedDataImages = {};
+
   final String? url;
   final BoxFit fit;
   final double? width;
@@ -25,6 +30,9 @@ class SmartImage extends StatelessWidget {
 
   static bool isDataUrl(String? url) => url != null && url.startsWith('data:');
 
+  static String _dataCacheKey(String dataUrl) =>
+      '${dataUrl.length}:${dataUrl.hashCode}';
+
   @override
   Widget build(BuildContext context) {
     final src = url;
@@ -34,7 +42,7 @@ class SmartImage extends StatelessWidget {
     }
 
     if (isDataUrl(src)) {
-      return _buildBase64(src);
+      return _buildBase64(context, src);
     }
 
     return CachedNetworkImage(
@@ -50,16 +58,36 @@ class SmartImage extends StatelessWidget {
     );
   }
 
-  Widget _buildBase64(String dataUrl) {
+  Widget _buildBase64(BuildContext context, String dataUrl) {
     try {
       final comma = dataUrl.indexOf(',');
       if (comma == -1) return _fallback();
-      final bytes = base64Decode(dataUrl.substring(comma + 1));
+      final key = _dataCacheKey(dataUrl);
+      final bytes = _decodedDataImages[key] ??= base64Decode(
+        dataUrl.substring(comma + 1),
+      );
+
+      if (_decodedDataImages.length > _maxCachedDataImages) {
+        _decodedDataImages.remove(_decodedDataImages.keys.first);
+      }
+
+      final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+      final cacheWidth = width != null && width!.isFinite
+          ? (width! * devicePixelRatio).round()
+          : null;
+      final cacheHeight = height != null && height!.isFinite
+          ? (height! * devicePixelRatio).round()
+          : null;
+
       return Image.memory(
         bytes,
         fit: fit,
         width: width,
         height: height,
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.medium,
+        cacheWidth: cacheWidth,
+        cacheHeight: cacheHeight,
         errorBuilder: (_, __, ___) => _fallback(),
       );
     } catch (_) {
