@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'theme.dart';
 import '../screens/home/home_screen.dart';
 import '../screens/splash_screen.dart';
 import '../screens/auth/login_screen.dart';
@@ -40,11 +41,14 @@ GoRouter buildRouter() {
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/splash',
+    overridePlatformDefaultLocation: true,
     refreshListenable: _SupabaseAuthRefreshListenable(),
     redirect: (context, state) {
       final session = Supabase.instance.client.auth.currentSession;
       final isLoggedIn = session != null;
       final location = state.uri.toString();
+
+      if (_isSupabaseAuthCallbackUri(state.uri)) return '/home';
 
       // Public pages — no login required
       const publicPrefixes = [
@@ -73,6 +77,7 @@ GoRouter buildRouter() {
       if (!isLoggedIn && !isPublic) return '/login';
       return null;
     },
+    errorBuilder: (context, state) => const _RouteErrorScreen(),
     routes: [
       GoRoute(
           path: '/splash', builder: (context, state) => const SplashScreen()),
@@ -270,6 +275,99 @@ GoRouter buildRouter() {
       ),
     ],
   );
+}
+
+bool _isSupabaseAuthCallbackUri(Uri uri) {
+  if (uri.scheme != 'io.supabase.evlumba') return false;
+  return uri.host == 'login-callback' ||
+      uri.pathSegments.contains('login-callback') ||
+      uri.fragment.contains('access_token') ||
+      uri.fragment.contains('error_description') ||
+      uri.queryParameters.containsKey('code');
+}
+
+class _RouteErrorScreen extends StatelessWidget {
+  const _RouteErrorScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: AppColors.border),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.06),
+                      blurRadius: 28,
+                      offset: const Offset(0, 14),
+                    ),
+                  ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 54,
+                        height: 54,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFE7F7EF),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.home_outlined,
+                          color: AppColors.primary,
+                          size: 28,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      const Text(
+                        'Sayfa bulunamadı',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Bu bağlantı artık geçerli olmayabilir. Ana sayfadan devam edebilirsiniz.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 14,
+                          height: 1.45,
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () => context.go('/home'),
+                          child: const Text('Ana sayfaya dön'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _SupabaseAuthRefreshListenable extends ChangeNotifier {

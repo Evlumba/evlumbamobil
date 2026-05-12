@@ -151,6 +151,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       await supabase.auth.signInWithOAuth(
         OAuthProvider.apple,
         redirectTo: 'io.supabase.evlumba://login-callback/',
+        authScreenLaunchMode: LaunchMode.externalApplication,
       );
     } on AuthException catch (e) {
       setState(() {
@@ -397,10 +398,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         width: double.infinity,
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: AppColors.error.withOpacity(0.1),
+                          color: AppColors.error.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: AppColors.error.withOpacity(0.3),
+                            color: AppColors.error.withValues(alpha: 0.3),
                           ),
                         ),
                         child: Text(
@@ -492,7 +493,7 @@ class _RoleCard extends StatelessWidget {
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: AppColors.primary.withOpacity(0.15),
+                    color: AppColors.primary.withValues(alpha: 0.15),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),

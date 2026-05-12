@@ -25,6 +25,7 @@ Future<void> main() async {
     anonKey: supabaseAnonKey,
     authOptions: const FlutterAuthClientOptions(
       authFlowType: AuthFlowType.implicit,
+      detectSessionInUri: false,
     ),
   );
   unawaited(PushNotificationService.instance.initialize());
@@ -46,6 +47,8 @@ class EvlumbaApp extends StatefulWidget {
 class _EvlumbaAppState extends State<EvlumbaApp> {
   late final GoRouter _router = buildRouter();
   final _appLinks = AppLinks();
+  StreamSubscription<Uri>? _linkSubscription;
+  bool _handlingAuthCallback = false;
 
   @override
   void initState() {
@@ -57,26 +60,77 @@ class _EvlumbaAppState extends State<EvlumbaApp> {
   void _handleIncomingLinks() {
     // Uygulama kapalıyken gelen link (cold start)
     _appLinks.getInitialLink().then((uri) {
-      if (uri != null) _navigateToLink(uri);
-    });
+      if (uri != null) unawaited(_handleIncomingUri(uri));
+    }).catchError((_) {});
 
     // Uygulama açıkken gelen link (warm start)
-    _appLinks.uriLinkStream.listen((uri) {
-      _navigateToLink(uri);
-    });
+    _linkSubscription = _appLinks.uriLinkStream.listen(
+      (uri) => unawaited(_handleIncomingUri(uri)),
+      onError: (_) {},
+    );
   }
 
-  void _navigateToLink(Uri uri) {
+  Future<void> _handleIncomingUri(Uri uri) async {
+    if (_isSupabaseAuthCallback(uri)) {
+      await _completeSupabaseAuth(uri);
+      return;
+    }
+
     // Sadece evlumba.com linklerini handle et
     if (uri.host != 'www.evlumba.com' && uri.host != 'evlumba.com') return;
 
     final path = uri.path; // örn: /projects/abc-123
     if (path.isEmpty) return;
 
+    final target = uri.hasQuery ? '$path?${uri.query}' : path;
+    _goTo(target);
+  }
+
+  bool _isSupabaseAuthCallback(Uri uri) {
+    if (uri.scheme != 'io.supabase.evlumba') return false;
+    return uri.host == 'login-callback' ||
+        uri.pathSegments.contains('login-callback') ||
+        uri.fragment.contains('access_token') ||
+        uri.fragment.contains('error_description') ||
+        uri.queryParameters.containsKey('code');
+  }
+
+  Future<void> _completeSupabaseAuth(Uri uri) async {
+    if (_handlingAuthCallback) return;
+    _handlingAuthCallback = true;
+
+    var hasAuthError = uri.fragment.contains('error_description') ||
+        uri.queryParameters.containsKey('error_description');
+
+    try {
+      if (!hasAuthError) {
+        await Supabase.instance.client.auth.getSessionFromUrl(uri);
+      }
+    } on AuthException {
+      hasAuthError = true;
+    } catch (_) {
+      hasAuthError = true;
+    } finally {
+      _handlingAuthCallback = false;
+    }
+
+    if (!mounted) return;
+    final hasSession = Supabase.instance.client.auth.currentSession != null;
+    _goTo(!hasAuthError && hasSession ? '/home' : '/login');
+  }
+
+  void _goTo(String location) {
     // Router hazır olana kadar kısa bekle
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _router.go(path);
+      if (!mounted) return;
+      _router.go(location);
     });
+  }
+
+  @override
+  void dispose() {
+    _linkSubscription?.cancel();
+    super.dispose();
   }
 
   @override

@@ -154,6 +154,7 @@ class _LoginScreenState extends State<LoginScreen> {
       await supabase.auth.signInWithOAuth(
         OAuthProvider.apple,
         redirectTo: 'io.supabase.evlumba://login-callback/',
+        authScreenLaunchMode: LaunchMode.externalApplication,
       );
     } on AuthException catch (e) {
       setState(() {
@@ -356,10 +357,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         width: double.infinity,
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: AppColors.error.withOpacity(0.1),
+                          color: AppColors.error.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: AppColors.error.withOpacity(0.3),
+                            color: AppColors.error.withValues(alpha: 0.3),
                           ),
                         ),
                         child: Text(
