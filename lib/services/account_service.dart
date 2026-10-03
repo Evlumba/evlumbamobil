@@ -27,8 +27,11 @@ class AccountService {
       final data = response.data;
       if (data is Map && data['ok'] == true) return;
 
-      throw const AccountDeletionException(
-        'Hesap silme işlemi tamamlanamadı.',
+      final message = data is Map ? data['message'] : null;
+      throw AccountDeletionException(
+        message is String && message.trim().isNotEmpty
+            ? message
+            : 'Hesap silme işlemi tamamlanamadı.',
       );
     } on FunctionException catch (e) {
       throw AccountDeletionException(_messageFromFunctionException(e));
@@ -36,7 +39,9 @@ class AccountService {
       throw AccountDeletionException(e.message);
     } catch (e) {
       if (e is AccountDeletionException) rethrow;
-      throw AccountDeletionException('Hesap silinemedi: $e');
+      throw const AccountDeletionException(
+        'Hesap silinemedi. İnternet bağlantınızı kontrol edip tekrar deneyin.',
+      );
     }
   }
 

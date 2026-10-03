@@ -44,7 +44,46 @@ class _WebScreenState extends State<WebScreen> {
         onPageStarted: (_) => setState(() => _loading = true),
         onPageFinished: (_) => setState(() => _loading = false),
       ))
+      ..setOnJavaScriptAlertDialog(_showJsAlert)
+      ..setOnJavaScriptConfirmDialog(_showJsConfirm)
       ..loadRequest(Uri.parse(_urlWithSession));
+  }
+
+  Future<void> _showJsAlert(JavaScriptAlertDialogRequest request) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        content: Text(request.message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Tamam'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool> _showJsConfirm(JavaScriptConfirmDialogRequest request) async {
+    if (!mounted) return false;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        content: Text(request.message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Vazgeç'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Tamam'),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
   }
 
   @override
